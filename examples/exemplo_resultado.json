@@ -1,0 +1,157 @@
+{
+  "grafo": {
+    "empresas": [
+      {
+        "cnpj": "11.111.111/0001-00",
+        "razao_social": "ALFA COMERCIO E SERVICOS LTDA",
+        "situacao": "ATIVA",
+        "data_abertura": "2019-03-10",
+        "endereco": "RUA DAS ACACIAS, 100, GOIANIA, GO",
+        "lance": "R$ 98.000,00",
+        "resultado": "VENCEDOR",
+        "qsa": [
+          {
+            "nome_socio": "JOAO DA SILVA",
+            "cpf_cnpj_socio": "***123456**",
+            "qualificacao": "Sócio-Administrador"
+          },
+          {
+            "nome_socio": "MARIA SOUZA",
+            "cpf_cnpj_socio": "***222333**",
+            "qualificacao": "Sócia"
+          }
+        ]
+      },
+      {
+        "cnpj": "11.111.112/0001-00",
+        "razao_social": "BETA SOLUCOES EIRELI",
+        "situacao": "ATIVA",
+        "data_abertura": "2019-03-12",
+        "endereco": "RUA DAS ACACIAS, 100, GOIANIA, GO",
+        "lance": "R$ 99.500,00",
+        "resultado": "2º lugar",
+        "qsa": [
+          {
+            "nome_socio": "JOAO DA SILVA",
+            "cpf_cnpj_socio": "***123456**",
+            "qualificacao": "Titular"
+          },
+          {
+            "nome_socio": "PEDRO LIMA",
+            "cpf_cnpj_socio": "***444555**",
+            "qualificacao": "Sócio"
+          }
+        ]
+      },
+      {
+        "cnpj": "11.111.113/0001-00",
+        "razao_social": "GAMA DISTRIBUIDORA LTDA",
+        "situacao": "ATIVA",
+        "data_abertura": "2020-07-01",
+        "endereco": "AV. CENTRAL, 500, APARECIDA DE GOIANIA, GO",
+        "lance": "R$ 99.900,00",
+        "resultado": "3º lugar",
+        "qsa": [
+          {
+            "nome_socio": "MARIA SOUZA",
+            "cpf_cnpj_socio": "***222333**",
+            "qualificacao": "Sócia"
+          },
+          {
+            "nome_socio": "JOAO DA SILVA",
+            "cpf_cnpj_socio": "***123456**",
+            "qualificacao": "Sócio"
+          }
+        ]
+      }
+    ],
+    "socios_index": {
+      "***123456**|JOAO DA SILVA": [
+        "11.111.111/0001-00",
+        "11.111.112/0001-00",
+        "11.111.113/0001-00"
+      ],
+      "***222333**|MARIA SOUZA": [
+        "11.111.111/0001-00",
+        "11.111.113/0001-00"
+      ],
+      "***444555**|PEDRO LIMA": [
+        "11.111.112/0001-00"
+      ]
+    },
+    "vinculos_suspeitos": [
+      {
+        "socio": "JOAO DA SILVA",
+        "cpf": "***123456**",
+        "empresas": [
+          "11.111.111/0001-00",
+          "11.111.112/0001-00",
+          "11.111.113/0001-00"
+        ]
+      },
+      {
+        "socio": "MARIA SOUZA",
+        "cpf": "***222333**",
+        "empresas": [
+          "11.111.111/0001-00",
+          "11.111.113/0001-00"
+        ]
+      }
+    ],
+    "expansao_socios": {}
+  },
+  "score": {
+    "score_geral": 100,
+    "score_bruto": 120,
+    "nivel_risco": "CRÍTICO",
+    "alertas": [
+      {
+        "tipo": "socio_em_comum",
+        "peso": 35,
+        "descricao": "Sócio 'JOAO DA SILVA' aparece em 3 empresas licitantes: 11.111.111/0001-00, 11.111.112/0001-00, 11.111.113/0001-00",
+        "empresas": [
+          "11.111.111/0001-00",
+          "11.111.112/0001-00",
+          "11.111.113/0001-00"
+        ]
+      },
+      {
+        "tipo": "socio_em_comum",
+        "peso": 35,
+        "descricao": "Sócio 'MARIA SOUZA' aparece em 2 empresas licitantes: 11.111.111/0001-00, 11.111.113/0001-00",
+        "empresas": [
+          "11.111.111/0001-00",
+          "11.111.113/0001-00"
+        ]
+      },
+      {
+        "tipo": "mesmo_endereco",
+        "peso": 20,
+        "descricao": "Mesmo endereço entre licitantes: RUA DAS ACACIAS, 100, GOIANIA, GO",
+        "empresas": [
+          "11.111.111/0001-00",
+          "11.111.112/0001-00"
+        ]
+      },
+      {
+        "tipo": "cnpj_sequencial",
+        "peso": 15,
+        "descricao": "CNPJs possivelmente sequenciais: 11.111.111/0001-00 e 11.111.112/0001-00",
+        "empresas": [
+          "11.111.111/0001-00",
+          "11.111.112/0001-00"
+        ]
+      },
+      {
+        "tipo": "cnpj_sequencial",
+        "peso": 15,
+        "descricao": "CNPJs possivelmente sequenciais: 11.111.112/0001-00 e 11.111.113/0001-00",
+        "empresas": [
+          "11.111.112/0001-00",
+          "11.111.113/0001-00"
+        ]
+      }
+    ],
+    "total_alertas": 5
+  }
+}
