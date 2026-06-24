@@ -297,14 +297,18 @@ def calcular_score(grafo: dict) -> dict:
     for emp in empresas:
         dono = (emp.get("dominio_dono") or "").strip()
         if dono:
-            donos.setdefault(dono, set()).add(emp.get("cnpj", ""))
-    for dono, cnpjs in donos.items():
-        if len(cnpjs) > 1:
+            reg = donos.setdefault(dono, {"cnpjs": set(), "nome": ""})
+            reg["cnpjs"].add(emp.get("cnpj", ""))
+            if not reg["nome"] and emp.get("dominio_dono_nome"):
+                reg["nome"] = emp["dominio_dono_nome"]
+    for dono, reg in donos.items():
+        if len(reg["cnpjs"]) > 1:
+            rotulo = f"{reg['nome']} ({dono})" if reg["nome"] else dono
             alertas.append({
                 "tipo": "mesmo_dono_dominio",
                 "peso": PESOS["mesmo_dono_dominio"],
-                "descricao": f"Mesmo titular de domínio (registro.br) entre licitantes: {dono}",
-                "empresas": sorted(cnpjs),
+                "descricao": f"Mesmo titular de domínio (registro.br) entre licitantes: {rotulo}",
+                "empresas": sorted(reg["cnpjs"]),
             })
             score += PESOS["mesmo_dono_dominio"]
 

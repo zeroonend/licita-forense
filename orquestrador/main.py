@@ -253,9 +253,13 @@ def _enriquecer_dominios(dados_empresas: list) -> None:
         emp["email_dominio"] = dom
         if dom not in donos:
             donos[dom] = consultar_dono_dominio(dom)
-            print(f"      → {dom}: titular {donos[dom] or '—'}")
-        if donos[dom]:
-            emp["dominio_dono"] = donos[dom]
+            d = donos[dom] or {}
+            print(f"      → {dom}: titular {d.get('nome') or d.get('id') or '—'}")
+        dono = donos[dom]
+        if dono:
+            emp["dominio_dono"] = dono.get("id") or dono.get("nome")
+            if dono.get("nome"):
+                emp["dominio_dono_nome"] = dono["nome"]
 
 
 def construir_grafo(dados_empresas: list, expansao_socios: dict = None) -> dict:
