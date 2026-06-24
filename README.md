@@ -20,6 +20,7 @@ saída versionada e trilha de execução para valor probatório:
 
 - `consulta_cnpj` — wrapper CNPJá: dados da empresa + QSA
 - `busca_reversa_socios` — dado sócio (nome + CPF 6 dígitos), retorna todas as empresas
+- `consulta_dominio` — titular de domínio via RDAP do registro.br (.br)
 - `scoring_conluio` — regras determinísticas (CADE); sem LLM, mesmo grafo → mesmo score
 - `gera_laudo` — síntese Claude API
 - `certidao_junta` — passo manual: certidão JUCEG para CPF completo nos licitantes do edital
