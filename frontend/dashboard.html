@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Licita Forense — Painel</title>
+  <style>
+    :root {
+      --bg: #0f1117; --panel: #1a1d27; --border: #2a2e3a;
+      --text: #e4e6eb; --muted: #8a8f9c; --accent: #4a90d9;
+      --critico: #e05252; --alto: #e08a52; --medio: #e0c452; --baixo: #52c47a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text);
+    }
+    header {
+      padding: 20px 28px; border-bottom: 1px solid var(--border); background: var(--panel);
+    }
+    header h1 { margin: 0; font-size: 20px; }
+    header .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 28px 60px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+      padding: 20px 22px; margin-bottom: 22px;
+    }
+    .card h2 { margin: 0 0 14px; font-size: 15px; }
+    label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+    input[type=file] { color: var(--muted); font-size: 13px; }
+    button {
+      background: var(--accent); color: #fff; border: none; border-radius: 7px;
+      padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    button:disabled { opacity: .5; cursor: default; }
+    button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-weight: 700; font-size: 11px; color: #0f1117; }
+    .CRÍTICO, .CRITICO { background: var(--critico); }
+    .ALTO { background: var(--alto); }
+    .MÉDIO, .MEDIO { background: var(--medio); }
+    .BAIXO { background: var(--baixo); }
+    a.link { color: var(--accent); text-decoration: none; margin-right: 12px; font-size: 12px; }
+    a.link:hover { text-decoration: underline; }
+    .muted { color: var(--muted); }
+    .pill { font-size: 11px; padding: 1px 7px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); }
+    .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Licita Forense — Painel</h1>
+    <div class="sub">Investigação de conluio em licitações · upload, histórico e cruzamento entre editais</div>
+  </header>
+  <main>
+    <!-- Operar -->
+    <div class="card">
+      <h2>Nova investigação</h2>
+      <div class="row">
+        <input type="file" id="pdf" accept="application/pdf">
+        <label class="inline"><input type="checkbox" id="aprofundar"> Aprofundar rede (SCPs)</label>
+        <button id="enviar">Investigar</button>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+
+    <!-- Histórico -->
+    <div class="card">
+      <h2>Histórico de execuções</h2>
+      <table id="tab-hist">
+        <thead><tr>
+          <th>Edital</th><th>Órgão</th><th>Score</th><th>Risco</th>
+          <th>Alertas</th><th>Quando</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="empty" id="hist-vazio" style="display:none">Nenhuma execução ainda — suba um PDF acima.</div>
+    </div>
+
+    <!-- Cruzamento -->
+    <div class="card">
+      <h2>Cruzamento entre editais
+        <span class="muted" style="font-weight:400;font-size:12px">— empresas/sócios que reaparecem</span>
+      </h2>
+      <div class="row" style="margin-bottom:12px">
+        <label class="inline">Aparece em ≥
+          <select id="min"><option>2</option><option>3</option><option>4</option><option>5</option></select>
+          editais
+        </label>
+        <button class="ghost" id="recarregar-cruz">Atualizar</button>
+      </div>
+      <table id="tab-cruz">
+        <thead><tr><th>Papel</th><th>Nome</th><th>Chave (CNPJ/CPF)</th><th>Nº editais</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="empty" id="cruz-vazio" style="display:none">Sem recorrências ainda — investigue 2+ editais para começar a cruzar.</div>
+    </div>
+  </main>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    const fmtData = s => { try { return new Date(s).toLocaleString("pt-BR"); } catch { return s || "—"; } };
+
+    async function carregarHistorico() {
+      const tb = $("#tab-hist tbody"); tb.innerHTML = "";
+      const dados = await fetch("/api/investigacoes").then(r => r.json());
+      $("#hist-vazio").style.display = dados.length ? "none" : "block";
+      for (const e of dados) {
+        const nivel = (e.nivel_risco || "").replace(/[^A-ZÀ-Ú]/gi, "");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${e.edital_numero || "—"}</td>
+          <td class="muted">${e.orgao || "—"}</td>
+          <td><b>${e.score_geral ?? "—"}</b></td>
+          <td>${e.nivel_risco ? `<span class="badge ${nivel}">${e.nivel_risco}</span>` : "—"}</td>
+          <td>${e.total_alertas ?? "—"}</td>
+          <td class="muted">${fmtData(e.criado_em)}</td>
+          <td>
+            <a class="link" target="_blank" href="/static/organograma.html?data=/api/investigacoes/${e.id}/artefato">Organograma</a>
+            <a class="link" target="_blank" href="/api/investigacoes/${e.id}/laudo.pdf">Laudo PDF</a>
+          </td>`;
+        tb.appendChild(tr);
+      }
+    }
+
+    async function carregarCruzamento() {
+      const min = $("#min").value;
+      const tb = $("#tab-cruz tbody"); tb.innerHTML = "";
+      const dados = await fetch("/api/cruzamento/recorrentes?min=" + min).then(r => r.json());
+      $("#cruz-vazio").style.display = dados.length ? "none" : "block";
+      for (const r of dados) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><span class="pill">${r.papel}</span></td>
+          <td>${r.nome || "—"}</td>
+          <td class="muted">${r.chave || "—"}</td>
+          <td><b>${r.n_editais}</b></td>`;
+        tb.appendChild(tr);
+      }
+    }
+
+    async function enviar() {
+      const f = $("#pdf").files[0];
+      if (!f) { $("#status").textContent = "Selecione um PDF."; return; }
+      const fd = new FormData();
+      fd.append("arquivo", f);
+      fd.append("aprofundar", $("#aprofundar").checked);
+      $("#enviar").disabled = true;
+      $("#status").textContent = "Enviando…";
+      try {
+        const { job_id } = await fetch("/api/investigacoes", { method: "POST", body: fd }).then(r => {
+          if (!r.ok) throw new Error("HTTP " + r.status); return r.json();
+        });
+        $("#status").textContent = "Investigação em andamento… (pode levar alguns minutos)";
+        await acompanhar(job_id);
+      } catch (err) {
+        $("#status").textContent = "Falha: " + err.message;
+      } finally {
+        $("#enviar").disabled = false;
+      }
+    }
+
+    function acompanhar(jobId) {
+      return new Promise(resolve => {
+        const t = setInterval(async () => {
+          const j = await fetch("/api/jobs/" + jobId).then(r => r.json());
+          if (j.status === "concluido") {
+            clearInterval(t);
+            $("#status").innerHTML = `Concluído ✓ — <a class="link" target="_blank" href="/static/organograma.html?data=/api/investigacoes/${j.execucao_id}/artefato">ver organograma</a>`;
+            carregarHistorico(); carregarCruzamento(); resolve();
+          } else if (j.status === "erro") {
+            clearInterval(t);
+            $("#status").textContent = "Erro na investigação: " + (j.erro || "desconhecido");
+            resolve();
+          }
+        }, 2500);
+      });
+    }
+
+    $("#enviar").addEventListener("click", enviar);
+    $("#recarregar-cruz").addEventListener("click", carregarCruzamento);
+    $("#min").addEventListener("change", carregarCruzamento);
+    carregarHistorico();
+    carregarCruzamento();
+  </script>
+</body>
+</html>
