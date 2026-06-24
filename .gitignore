@@ -13,3 +13,7 @@ venv/
 *.egg-info/
 .idea/
 .vscode/
+
+# saídas geradas pelo demo de exemplo (regeneráveis via examples/demo.py)
+examples/organograma_exemplo.svg
+examples/organograma_exemplo.png
