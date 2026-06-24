@@ -15,6 +15,7 @@
       --empresa: #4a90d9;
       --socio: #d99a4a;
       --externa: #9a6dd9;
+      --scp: #2fae9e;
       --vinculo: #e05252;
       --critico: #e05252;
       --alto: #e08a52;
@@ -210,6 +211,7 @@
       <div class="item"><span class="dot" style="background:var(--empresa)"></span> Empresa licitante</div>
       <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio</div>
       <div class="item"><span class="dot" style="background:var(--externa)"></span> Empresa externa (busca reversa)</div>
+      <div class="item"><span class="dot" style="background:var(--scp)"></span> Grupo de SCPs (aprofundamento)</div>
       <div class="item"><span class="dot" style="background:var(--vinculo)"></span> Vínculo suspeito</div>
     </div>
     <div id="tooltip"></div>
@@ -441,6 +443,61 @@
         if (socioSuspeito.has(chave)) l.suspeito = true;
       });
 
+      // Camada de aprofundamento (2º nível): empresas externas (SCPs) consultadas
+      // em detalhe, COLAPSADAS por grupo econômico para não poluir (ex.: ~100
+      // "GROUPMED ... SCP NN" viram um único nó "GROUPMED (100 SCPs)").
+      const aprof = grafo.aprofundamento || {};
+      if (Object.keys(aprof).length) {
+        const soDig = (v) => (v || "").replace(/\D/g, "");
+        const licByCnpj = {};   // CNPJ (dígitos) → id do nó licitante
+        const licBySocio = {};  // nome do sócio (upper) → id do nó licitante
+        (grafo.empresas || []).forEach(emp => {
+          licByCnpj[soDig(emp.cnpj)] = idxEmpresa[emp.cnpj];
+          (emp.qsa || []).forEach(s => {
+            const nm = (s.nome_socio || "").toUpperCase();
+            if (nm) licBySocio[nm] = idxEmpresa[emp.cnpj];
+          });
+        });
+        const assocLic = (qsa) => {
+          const set = new Set();
+          (qsa || []).forEach(s => {
+            const doc = soDig(s.cpf_cnpj_socio);
+            const nm = (s.nome_socio || "").toUpperCase();
+            if (doc && licByCnpj[doc]) set.add(licByCnpj[doc]);
+            else if (nm && licBySocio[nm]) set.add(licBySocio[nm]);
+          });
+          return set;
+        };
+        // Chave de grupo: nome canônico antes de "SCP", sem sufixos societários.
+        const grupoKey = (razao) => {
+          let s = (razao || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toUpperCase();
+          s = s.replace(/[^A-Z0-9]+/g, " ");
+          const i = s.indexOf(" SCP");
+          if (i >= 0) s = s.slice(0, i);
+          s = s.replace(/\b(LTDA|S A|SA|ME|EPP|EIRELI)\b/g, " ");
+          return s.split(/\s+/).filter(Boolean).join(" ");
+        };
+        const grupos = {};
+        Object.values(aprof).forEach(info => {
+          const key = grupoKey(info.razao_social);
+          if (!key) return;
+          const gg = grupos[key] || (grupos[key] = { label: key, count: 0, licitantes: new Set() });
+          gg.count++;
+          assocLic(info.qsa).forEach(c => gg.licitantes.add(c));
+        });
+        Object.entries(grupos).forEach(([key, gg]) => {
+          if (!gg.licitantes.size) return;  // sem ligação a licitante → não desenha
+          const id = "scp:" + key;
+          const susp = gg.licitantes.size >= 2;
+          nodes.push({
+            id, tipo: "scp_grupo", suspeito: susp,
+            label: `${truncar(gg.label, 22)} (${gg.count} SCP${gg.count > 1 ? "s" : ""})`,
+            dados: { label: gg.label, count: gg.count, nLicitantes: gg.licitantes.size }
+          });
+          gg.licitantes.forEach(c => links.push({ source: id, target: c, suspeito: susp, scp: true }));
+        });
+      }
+
       currentNodes = nodes;
 
       // Container que recebe o zoom/pan; tudo é desenhado dentro dele.
@@ -474,9 +531,12 @@
         empresa: getCss("--empresa"),
         socio: getCss("--socio"),
         externa: getCss("--externa"),
+        scp_grupo: getCss("--scp"),
       };
       node.append("circle")
-        .attr("r", d => d.tipo === "empresa" ? 16 : (d.tipo === "externa" ? 12 : 10))
+        .attr("r", d => d.tipo === "empresa" ? 16
+          : d.tipo === "scp_grupo" ? 14
+          : d.tipo === "externa" ? 12 : 10)
         .attr("fill", d => CORES_TIPO[d.tipo] || getCss("--muted"));
 
       node.append("text")
@@ -539,6 +599,12 @@
         linha("Empresa externa (fora do edital)");
         linha(`Qualificação do sócio: ${e.qualificacao || "—"}`);
         linha(`Situação: ${e.situacao || "—"}`);
+      } else if (d.tipo === "scp_grupo") {
+        const e = d.dados;
+        titulo(e.label);
+        linha(`${e.count} SCP(s) do mesmo grupo`);
+        linha(`Ligadas a ${e.nLicitantes} licitante(s)`);
+        if (e.nLicitantes >= 2) linha("⚠ Conecta licitantes distintos");
       } else {
         const s = d.dados;
         titulo(s.nome_socio);
