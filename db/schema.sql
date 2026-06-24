@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS socios (
     pais_socio VARCHAR(5)
 );
 
+-- Relação com `empresas`:
+--   estabelecimentos.cnpj_basico = primeiros 8 dígitos de empresas.cnpj (raiz do CNPJ)
+--   JOIN: WHERE empresas.cnpj LIKE estabelecimentos.cnpj_basico || '%'
+--   Não há FK direta porque cnpj_basico é um prefixo, não a PK de empresas.
 CREATE TABLE IF NOT EXISTS estabelecimentos (
     cnpj VARCHAR(14) PRIMARY KEY,
     cnpj_basico VARCHAR(8),

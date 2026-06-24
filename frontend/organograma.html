@@ -238,17 +238,30 @@
 
       const lista = document.getElementById("alertas-lista");
       const alertas = score.alertas || [];
+      lista.textContent = "";
       if (!alertas.length) {
-        lista.innerHTML = '<div style="color:var(--muted);font-size:12px">Nenhum alerta.</div>';
+        const vazio = document.createElement("div");
+        vazio.style.cssText = "color:var(--muted);font-size:12px";
+        vazio.textContent = "Nenhum alerta.";
+        lista.appendChild(vazio);
         return;
       }
-      lista.innerHTML = alertas.map(a => `
-        <div class="alerta">
-          <span class="tipo">${a.tipo}</span>
-          <span class="peso">+${a.peso}</span>
-          <div style="margin-top:6px">${a.descricao}</div>
-        </div>
-      `).join("");
+      // textContent (não innerHTML) — dados de empresa/sócio vêm de fontes externas
+      alertas.forEach(a => {
+        const div = document.createElement("div");
+        div.className = "alerta";
+        const tipo = document.createElement("span");
+        tipo.className = "tipo";
+        tipo.textContent = a.tipo;
+        const peso = document.createElement("span");
+        peso.className = "peso";
+        peso.textContent = `+${a.peso}`;
+        const desc = document.createElement("div");
+        desc.style.marginTop = "6px";
+        desc.textContent = a.descricao;
+        div.append(tipo, peso, desc);
+        lista.appendChild(div);
+      });
     }
 
     function desenharGrafo(grafo) {
@@ -350,21 +363,35 @@
     }
 
     function mostrarTooltip(ev, d) {
-      let html = "";
+      // Constrói o conteúdo via textContent — dados externos não viram HTML.
+      const el = tooltip.node();
+      el.textContent = "";
+      const titulo = (txt) => {
+        const div = document.createElement("div");
+        div.className = "t-titulo";
+        div.textContent = txt || "";
+        el.appendChild(div);
+      };
+      const linha = (txt) => {
+        const div = document.createElement("div");
+        div.className = "t-linha";
+        div.textContent = txt;
+        el.appendChild(div);
+      };
       if (d.tipo === "empresa") {
         const e = d.dados;
-        html = `<div class="t-titulo">${e.razao_social || ""}</div>
-          <div class="t-linha">CNPJ: ${e.cnpj || "—"}</div>
-          <div class="t-linha">Situação: ${e.situacao || "—"}</div>
-          <div class="t-linha">Lance: ${e.lance || "—"} · ${e.resultado || "—"}</div>
-          <div class="t-linha">Abertura: ${e.data_abertura || "—"}</div>`;
+        titulo(e.razao_social);
+        linha(`CNPJ: ${e.cnpj || "—"}`);
+        linha(`Situação: ${e.situacao || "—"}`);
+        linha(`Lance: ${e.lance || "—"} · ${e.resultado || "—"}`);
+        linha(`Abertura: ${e.data_abertura || "—"}`);
       } else {
         const s = d.dados;
-        html = `<div class="t-titulo">${s.nome_socio || ""}</div>
-          <div class="t-linha">CPF/CNPJ: ${s.cpf_cnpj_socio || "—"}</div>
-          <div class="t-linha">Qualificação: ${s.qualificacao || "—"}</div>`;
+        titulo(s.nome_socio);
+        linha(`CPF/CNPJ: ${s.cpf_cnpj_socio || "—"}`);
+        linha(`Qualificação: ${s.qualificacao || "—"}`);
       }
-      tooltip.html(html).style("opacity", 1);
+      tooltip.style("opacity", 1);
       moverTooltip(ev);
     }
     function moverTooltip(ev) {

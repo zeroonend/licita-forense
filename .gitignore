@@ -1,6 +1,5 @@
 .env
-*.pdf
-*.PDF
+*.[Pp][Dd][Ff]
 laudos/
 dumps/
 __pycache__/

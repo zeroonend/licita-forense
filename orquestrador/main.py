@@ -33,7 +33,8 @@ def investigar(caminho_pdf: str) -> dict:
         print(f"      → {empresa['cnpj']} — {dados.get('razao_social', 'N/A')}")
 
     print("\n[3/5] Investigando sócios (busca reversa)...")
-    grafo = construir_grafo(dados_empresas)
+    expansao_socios = investigar_socios(dados_empresas)
+    grafo = construir_grafo(dados_empresas, expansao_socios)
 
     print("\n[4/5] Calculando score de conluio...")
     score = calcular_score(grafo)
@@ -49,19 +50,44 @@ def investigar(caminho_pdf: str) -> dict:
     }
 
 
-def construir_grafo(dados_empresas: list) -> dict:
+def investigar_socios(dados_empresas: list) -> dict:
+    """
+    Busca reversa: para cada sócio único dos licitantes, consulta a CNPJá
+    todas as outras empresas onde ele aparece (fora do edital corrente).
+    Retorna { chave_socio → [empresas externas] }.
+    """
+    expansao = {}
+    for empresa in dados_empresas:
+        for socio in empresa.get("qsa", []):
+            nome = socio.get("nome_socio", "")
+            cpf = socio.get("cpf_cnpj_socio", "")
+            chave = f"{cpf}|{nome.upper()}"
+            if not nome or chave in expansao:
+                continue
+            externas = buscar_empresas_do_socio(nome=nome, cpf_parcial=cpf)
+            expansao[chave] = externas
+            print(f"      → {nome}: {len(externas)} empresa(s) vinculada(s)")
+    return expansao
+
+
+def construir_grafo(dados_empresas: list, expansao_socios: dict = None) -> dict:
     """
     Monta o grafo de vínculos entre empresas e sócios.
-    Detecta sócios em comum entre licitantes.
+    Detecta sócios em comum entre licitantes e anexa a expansão da busca
+    reversa (empresas externas por sócio), quando disponível.
     """
+    expansao_socios = expansao_socios or {}
     socios_index = {}  # cpf_parcial+nome → [cnpjs]
 
     for empresa in dados_empresas:
+        cnpj = empresa.get("cnpj", "")
+        if not cnpj:
+            continue
         for socio in empresa.get("qsa", []):
             chave = f"{socio.get('cpf_cnpj_socio', '')}|{socio.get('nome_socio', '').upper()}"
             if chave not in socios_index:
                 socios_index[chave] = []
-            socios_index[chave].append(empresa["cnpj"])
+            socios_index[chave].append(cnpj)
 
     vinculos_suspeitos = [
         {"socio": chave.split("|")[1], "cpf": chave.split("|")[0], "empresas": cnpjs}
@@ -72,7 +98,8 @@ def construir_grafo(dados_empresas: list) -> dict:
     return {
         "empresas": dados_empresas,
         "socios_index": socios_index,
-        "vinculos_suspeitos": vinculos_suspeitos
+        "vinculos_suspeitos": vinculos_suspeitos,
+        "expansao_socios": expansao_socios
     }
 
 
