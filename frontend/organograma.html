@@ -112,7 +112,27 @@
     }
     #upload-area:hover { border-color: var(--empresa); color: var(--text); }
     #graph { flex: 1; position: relative; }
-    svg { width: 100%; height: 100%; display: block; }
+    svg { width: 100%; height: 100%; display: block; cursor: grab; }
+    svg:active { cursor: grabbing; }
+    #controles {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      gap: 6px;
+      z-index: 11;
+    }
+    #controles button {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 11px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #controles button:hover { border-color: var(--empresa); }
     .link { stroke: var(--border); stroke-width: 1.5px; }
     .link.suspeito { stroke: var(--vinculo); stroke-width: 2.5px; stroke-dasharray: 4 2; }
     .node circle { stroke: var(--bg); stroke-width: 2px; cursor: pointer; }
@@ -121,6 +141,10 @@
       font-size: 11px;
       pointer-events: none;
     }
+    /* Rótulos de empresas externas poluem o grafo — ocultos por padrão
+       (continuam no tooltip); o botão "Rótulos" os revela. */
+    .node text.lbl-ext { opacity: 0; }
+    body.show-ext-labels .node text.lbl-ext { opacity: 1; fill: var(--muted); }
     .legenda {
       position: absolute;
       bottom: 16px;
@@ -175,6 +199,13 @@
 
   <main id="graph">
     <svg id="svg"></svg>
+    <div id="controles">
+      <button id="btn-fit" title="Centralizar e ajustar à tela">⤢ Ajustar</button>
+      <button id="btn-reorg" title="Reorganizar o grafo">↻ Reorganizar</button>
+      <button id="btn-zin" title="Aproximar">＋</button>
+      <button id="btn-zout" title="Afastar">－</button>
+      <button id="btn-labels" title="Mostrar/ocultar nomes das empresas externas">A Rótulos</button>
+    </div>
     <div class="legenda">
       <div class="item"><span class="dot" style="background:var(--empresa)"></span> Empresa licitante</div>
       <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio</div>
@@ -204,6 +235,42 @@
     const svg = d3.select("#svg");
     const tooltip = d3.select("#tooltip");
     let simulation;
+    let zoomBehavior;   // comportamento d3.zoom (pan/zoom)
+    let gZoom;          // container <g> que recebe a transformação
+    let currentNodes;   // nós do render atual (para "Ajustar")
+
+    // Centraliza e ajusta todo o grafo à área visível.
+    function ajustarVisao() {
+      if (!currentNodes || !currentNodes.length || !zoomBehavior) return;
+      const pad = 60;
+      const xs = currentNodes.map(n => n.x), ys = currentNodes.map(n => n.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const w = document.getElementById("graph").clientWidth;
+      const h = document.getElementById("graph").clientHeight;
+      const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
+      const scale = Math.min(4, Math.max(0.1,
+        Math.min((w - pad * 2) / gw, (h - pad * 2) / gh)));
+      const tx = (w - scale * (minX + maxX)) / 2;
+      const ty = (h - scale * (minY + maxY)) / 2;
+      svg.transition().duration(500).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(tx, ty).scale(scale));
+    }
+
+    // Botões de controle
+    document.getElementById("btn-fit").onclick = ajustarVisao;
+    document.getElementById("btn-reorg").onclick = () => {
+      if (simulation) simulation.alpha(0.8).restart();
+    };
+    document.getElementById("btn-zin").onclick = () => {
+      if (zoomBehavior) svg.transition().call(zoomBehavior.scaleBy, 1.3);
+    };
+    document.getElementById("btn-zout").onclick = () => {
+      if (zoomBehavior) svg.transition().call(zoomBehavior.scaleBy, 0.77);
+    };
+    document.getElementById("btn-labels").onclick = () =>
+      document.body.classList.toggle("show-ext-labels");
 
     document.getElementById("upload-area").addEventListener("click", () =>
       document.getElementById("file-input").click());
@@ -374,17 +441,28 @@
         if (socioSuspeito.has(chave)) l.suspeito = true;
       });
 
-      simulation = d3.forceSimulation(nodes)
-        .force("link", d3.forceLink(links).id(d => d.id).distance(90))
-        .force("charge", d3.forceManyBody().strength(-320))
-        .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collide", d3.forceCollide(40));
+      currentNodes = nodes;
 
-      const link = svg.append("g").selectAll("line")
+      // Container que recebe o zoom/pan; tudo é desenhado dentro dele.
+      const g = svg.append("g");
+      gZoom = g;
+      zoomBehavior = d3.zoom().scaleExtent([0.1, 4])
+        .on("zoom", (ev) => g.attr("transform", ev.transform));
+      svg.call(zoomBehavior).on("dblclick.zoom", null);
+
+      simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(d => d.externa ? 70 : 110))
+        .force("charge", d3.forceManyBody().strength(-450))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide(d => d.tipo === "empresa" ? 28 : 18))
+        .force("x", d3.forceX(width / 2).strength(0.05))
+        .force("y", d3.forceY(height / 2).strength(0.05));
+
+      const link = g.append("g").selectAll("line")
         .data(links).join("line")
         .attr("class", d => "link" + (d.suspeito ? " suspeito" : ""));
 
-      const node = svg.append("g").selectAll("g")
+      const node = g.append("g").selectAll("g")
         .data(nodes).join("g")
         .attr("class", "node")
         .call(d3.drag()
@@ -402,6 +480,7 @@
         .attr("fill", d => CORES_TIPO[d.tipo] || getCss("--muted"));
 
       node.append("text")
+        .attr("class", d => d.tipo === "externa" ? "lbl-ext" : "lbl")
         .attr("x", 20).attr("y", 4)
         .text(d => truncar(d.label, 28));
 
@@ -415,6 +494,9 @@
           .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
         node.attr("transform", d => `translate(${d.x},${d.y})`);
       });
+
+      // Auto-centraliza assim que o layout estabiliza.
+      setTimeout(ajustarVisao, 900);
 
       function dragStart(ev, d) {
         if (!ev.active) simulation.alphaTarget(0.3).restart();
