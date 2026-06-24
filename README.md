@@ -31,6 +31,8 @@ saída versionada e trilha de execução para valor probatório:
 - **CNPJá (primário)** — QSA em tempo real, busca reversa de sócios
 - **BrasilAPI (fallback)** — gratuito, dados mensais
 - **Junta Comercial** — certidão oficial com CPF completo e fé pública (passo manual)
+- **SQLite local (`--banco`)** — cache persistente de consultas + índice de execuções
+  (cruzamento entre editais). Camada portável: vira Postgres no dia do dump RFB.
 - **Base RFB local (fase 2)** — Postgres com dump nacional da Receita Federal
 
 ## Setup
@@ -39,11 +41,15 @@ saída versionada e trilha de execução para valor probatório:
 cp .env.example .env
 # preencha as variáveis (ANTHROPIC_API_KEY e/ou GEMINI_API_KEY, CNPJA_API_KEY)
 pip install -r requirements.txt
-python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend] [--pdf]
+python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend] [--pdf] [--banco]
 ```
 
 Cada execução grava o artefato versionado em `execucoes/<id>.json`.
 `--pdf` gera o laudo formatado em `laudos/laudo_<id>.pdf`.
+`--banco` liga o SQLite (`dados/licita.db`): cache persistente de consultas
+(CNPJ/domínio) que economiza créditos entre execuções e índice de execuções
+para cruzamento entre editais. Desligado nos modos `--gravar-cache`/replay
+para não interferir na trilha determinística.
 
 Para visualizar no organograma:
 
