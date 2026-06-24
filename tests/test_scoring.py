@@ -1,6 +1,6 @@
 """Testes das regras determinísticas de scoring e dos normalizadores."""
 from skills.scoring_conluio.skill import (
-    calcular_score, _so_digitos, _normalizar_endereco, _parse_data,
+    calcular_score, _so_digitos, _normalizar_endereco, _parse_data, _parse_valor,
     _classificar_nivel, RULESET_VERSION, PESOS,
 )
 
@@ -134,6 +134,42 @@ def test_ponte_externa_aprofundada():
     assert ponte, "FREDERICO deveria ligar ALFA e BETA"
     assert "FREDERICO" in ponte[0]["descricao"]
     assert set(ponte[0]["empresas"]) == {"ALFA", "BETA"}
+
+
+def test_parse_valor():
+    assert _parse_valor("R$ 450.532,20") == 450532.20
+    assert _parse_valor("1.000.000,00") == 1000000.0
+    assert _parse_valor(1000) == 1000.0
+    assert _parse_valor("abc") is None
+    assert _parse_valor(None) is None
+
+
+def test_lance_cobertura():
+    g = _grafo([
+        {"cnpj": "11111111000111", "lance": "R$ 450.000,00"},
+        {"cnpj": "22222222000122", "lance": "R$ 450.500,00"},  # dif ~0,11%
+    ])
+    tipos = [a["tipo"] for a in calcular_score(g)["alertas"]]
+    assert "lance_cobertura" in tipos
+
+
+def test_lance_redondo():
+    g = _grafo([
+        {"cnpj": "11111111000111", "lance": "R$ 100.000,00"},
+        {"cnpj": "22222222000122", "lance": "R$ 200.000,00"},  # ambos redondos, longe
+    ])
+    tipos = [a["tipo"] for a in calcular_score(g)["alertas"]]
+    assert "lance_redondo" in tipos
+    assert "lance_cobertura" not in tipos  # 50% de diferença
+
+
+def test_lances_normais_nao_disparam():
+    g = _grafo([
+        {"cnpj": "11111111000111", "lance": "R$ 450.532,20"},
+        {"cnpj": "22222222000122", "lance": "R$ 488.473,20"},
+    ])
+    tipos = [a["tipo"] for a in calcular_score(g)["alertas"]]
+    assert "lance_cobertura" not in tipos and "lance_redondo" not in tipos
 
 
 def test_ponte_nao_roda_sem_aprofundamento():
