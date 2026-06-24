@@ -15,6 +15,7 @@
       --empresa: #4a90d9;
       --socio: #d99a4a;
       --externa: #9a6dd9;
+      --externa-scp: #d96d9a;
       --scp: #2fae9e;
       --vinculo: #e05252;
       --critico: #e05252;
@@ -210,7 +211,8 @@
     <div class="legenda">
       <div class="item"><span class="dot" style="background:var(--empresa)"></span> Empresa licitante</div>
       <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio</div>
-      <div class="item"><span class="dot" style="background:var(--externa)"></span> Empresa externa (busca reversa)</div>
+      <div class="item"><span class="dot" style="background:var(--externa)"></span> Empresa externa (não-SCP)</div>
+      <div class="item"><span class="dot" style="background:var(--externa-scp)"></span> Empresa externa SCP</div>
       <div class="item"><span class="dot" style="background:var(--scp)"></span> Grupo de SCPs (aprofundamento)</div>
       <div class="item"><span class="dot" style="background:var(--vinculo)"></span> Vínculo suspeito</div>
     </div>
@@ -533,11 +535,18 @@
         externa: getCss("--externa"),
         scp_grupo: getCss("--scp"),
       };
+      const ehSCP = (txt) => /\bSCP\b/i.test(txt || "");
+      const corNo = (d) => {
+        // Empresas externas SCP ganham cor própria (separadas das não-SCP).
+        if (d.tipo === "externa" && ehSCP(d.dados && d.dados.razao_social))
+          return getCss("--externa-scp");
+        return CORES_TIPO[d.tipo] || getCss("--muted");
+      };
       node.append("circle")
         .attr("r", d => d.tipo === "empresa" ? 16
           : d.tipo === "scp_grupo" ? 14
           : d.tipo === "externa" ? 12 : 10)
-        .attr("fill", d => CORES_TIPO[d.tipo] || getCss("--muted"));
+        .attr("fill", corNo);
 
       node.append("text")
         .attr("class", d => d.tipo === "externa" ? "lbl-ext" : "lbl")
