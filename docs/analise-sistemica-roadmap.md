@@ -120,7 +120,7 @@ Registrar, no minimo:
 1. Estender o schema SQL com tabelas de `execucoes`, `artefatos`, `external_calls` e `evidencias`.
 2. Implementar cache/replay para CNPJa, BrasilAPI e chamadas LLM.
 3. Definir modo deterministico: em `replay`, nenhuma chamada externa nova deve ocorrer.
-4. Substituir truncamento simples do PDF por estrategia de chunking ou extracao por paginas.
+4. [x] Truncamento substituido por chunking com sobreposicao e mesclagem (dedup por CNPJ/nome).
 5. Registrar warnings estruturados quando a cobertura do documento for parcial.
 
 ### P2 - Cobertura funcional de investigacao
