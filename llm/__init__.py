@@ -30,23 +30,42 @@ class LLMResult:
         self.model = model
 
 
-def gerar_texto(prompt: str, max_tokens: int = 2000, temperature: float = 0) -> LLMResult:
+# Telemetria das chamadas LLM da execução corrente — para a trilha auditável.
+# O orquestrador chama reset_telemetria() no início e telemetria() no fim.
+_telemetria = []
+
+
+def reset_telemetria():
+    """Zera o registro de chamadas LLM (chamar no início de cada execução)."""
+    _telemetria.clear()
+
+
+def telemetria() -> list:
+    """Retorna cópia dos registros de chamadas LLM da execução corrente."""
+    return list(_telemetria)
+
+
+def gerar_texto(prompt: str, max_tokens: int = 2000, temperature: float = 0,
+                purpose: str = None) -> LLMResult:
     """
     Gera texto tentando os provedores em ordem (Anthropic → Gemini).
     Cai para o próximo provedor em qualquer falha do anterior (sem chave,
     sem crédito, erro de rede). Levanta RuntimeError se nenhum funcionar.
+
+    purpose: rótulo da finalidade ('extracao', 'laudo'...) registrado na
+    telemetria para a trilha auditável.
     """
     erros = []
 
     if os.getenv("ANTHROPIC_API_KEY"):
         try:
-            return _anthropic(prompt, max_tokens, temperature)
+            return _registrar(_anthropic(prompt, max_tokens, temperature), purpose, max_tokens)
         except Exception as e:
             erros.append(f"anthropic: {type(e).__name__}: {str(e)[:140]}")
 
     if os.getenv("GEMINI_API_KEY"):
         try:
-            return _gemini(prompt, max_tokens, temperature)
+            return _registrar(_gemini(prompt, max_tokens, temperature), purpose, max_tokens)
         except Exception as e:
             erros.append(f"gemini: {type(e).__name__}: {str(e)[:140]}")
 
@@ -56,6 +75,16 @@ def gerar_texto(prompt: str, max_tokens: int = 2000, temperature: float = 0) -> 
         "Nenhum provedor LLM configurado. Defina ANTHROPIC_API_KEY e/ou "
         "GEMINI_API_KEY no .env."
     )
+
+
+def _registrar(res: LLMResult, purpose: str, max_tokens: int) -> LLMResult:
+    _telemetria.append({
+        "purpose": purpose,
+        "provider": res.provider,
+        "model": res.model,
+        "max_tokens": max_tokens,
+    })
+    return res
 
 
 def _anthropic(prompt: str, max_tokens: int, temperature: float) -> LLMResult:

@@ -6,6 +6,8 @@ import json
 
 from llm import gerar_texto
 
+LAUDO_PROMPT_VERSION = "laudo.v1"
+
 
 def gerar_laudo(grafo: dict, score: dict, meta: dict) -> str:
     """
@@ -50,7 +52,7 @@ Não invente dados que não estão nos inputs."""
 
     # Modo híbrido: LLM quando disponível; template determinístico como fallback.
     try:
-        resposta = gerar_texto(prompt, max_tokens=3000)
+        resposta = gerar_texto(prompt, max_tokens=3000, purpose="laudo")
         print(f"      [laudo via {resposta.provider}/{resposta.model}]")
         return resposta.text
     except Exception as e:

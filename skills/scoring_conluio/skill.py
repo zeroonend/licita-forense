@@ -6,6 +6,7 @@ Totalmente determinístico: mesmo grafo → mesmo score (sem LLM).
 import unicodedata
 from datetime import datetime
 
+RULESET_VERSION = "scoring_conluio.v2"  # 6 regras (inclui rede externa, ponte, abertura)
 JANELA_ABERTURA_DIAS = 90  # aberturas dentro desta janela são consideradas próximas
 
 
@@ -214,7 +215,8 @@ def calcular_score(grafo: dict) -> dict:
         "score_bruto": score,
         "nivel_risco": nivel,
         "alertas": alertas,
-        "total_alertas": len(alertas)
+        "total_alertas": len(alertas),
+        "ruleset_version": RULESET_VERSION
     }
 
 

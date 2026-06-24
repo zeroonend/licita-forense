@@ -9,6 +9,7 @@ import pdfplumber
 from llm import gerar_texto
 
 MAX_CHARS = 15_000
+EXTRACTOR_PROMPT_VERSION = "extractor.v1"
 
 
 def extrair_licitantes(caminho_pdf: str) -> dict:
@@ -70,7 +71,7 @@ Regras:
 - Inclua TODAS as empresas participantes, inclusive desclassificadas
 - Ordene pelo resultado (vencedor primeiro)"""
 
-    resposta = gerar_texto(prompt, max_tokens=2000)
+    resposta = gerar_texto(prompt, max_tokens=2000, purpose="extracao")
     print(f"      [extração via {resposta.provider}/{resposta.model}]")
 
     texto_resposta = resposta.text.strip()
