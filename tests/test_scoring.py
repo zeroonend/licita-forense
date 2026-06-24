@@ -1,7 +1,7 @@
 """Testes das regras determinísticas de scoring e dos normalizadores."""
 from skills.scoring_conluio.skill import (
     calcular_score, _so_digitos, _normalizar_endereco, _parse_data, _parse_valor,
-    _classificar_nivel, RULESET_VERSION, PESOS,
+    _dominio_email, _classificar_nivel, RULESET_VERSION, PESOS,
 )
 
 
@@ -170,6 +170,47 @@ def test_lances_normais_nao_disparam():
     ])
     tipos = [a["tipo"] for a in calcular_score(g)["alertas"]]
     assert "lance_cobertura" not in tipos and "lance_redondo" not in tipos
+
+
+def test_dominio_email():
+    assert _dominio_email("contato@EMPRESA.com.br") == "empresa.com.br"
+    assert _dominio_email("sem-arroba") == ""
+    assert _dominio_email(None) == ""
+
+
+def test_mesmo_telefone():
+    g = _grafo([
+        {"cnpj": "11111111000111", "telefone": "(62) 3333-4444"},
+        {"cnpj": "22222222000122", "telefone": "6233334444"},
+    ])
+    a = [x for x in calcular_score(g)["alertas"] if x["tipo"] == "mesmo_telefone"]
+    assert a and a[0]["peso"] == PESOS["mesmo_telefone"]
+
+
+def test_mesmo_email_dominio_ignora_provedor_generico():
+    suspeito = _grafo([
+        {"cnpj": "11111111000111", "email": "a@grupox.com.br"},
+        {"cnpj": "22222222000122", "email": "b@grupox.com.br"},
+    ])
+    assert "mesmo_email_dominio" in [x["tipo"] for x in calcular_score(suspeito)["alertas"]]
+
+    generico = _grafo([
+        {"cnpj": "11111111000111", "email": "a@gmail.com"},
+        {"cnpj": "22222222000122", "email": "b@gmail.com"},
+    ])
+    assert "mesmo_email_dominio" not in [x["tipo"] for x in calcular_score(generico)["alertas"]]
+
+
+def test_mesmo_dono_dominio():
+    g = _grafo([
+        {"cnpj": "11111111000111", "dominio_dono": "99888777000166"},
+        {"cnpj": "22222222000122", "dominio_dono": "99888777000166"},
+    ])
+    a = [x for x in calcular_score(g)["alertas"] if x["tipo"] == "mesmo_dono_dominio"]
+    assert a and a[0]["peso"] == PESOS["mesmo_dono_dominio"]
+    # sem enriquecimento (sem campo dominio_dono) → regra não dispara
+    g2 = _grafo([{"cnpj": "11111111000111"}, {"cnpj": "22222222000122"}])
+    assert "mesmo_dono_dominio" not in [x["tipo"] for x in calcular_score(g2)["alertas"]]
 
 
 def test_ponte_nao_roda_sem_aprofundamento():

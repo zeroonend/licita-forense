@@ -60,9 +60,12 @@ Implementados hoje (scoring 100% determinístico, sem LLM):
 - Sócio em comum entre licitantes (peso 35)
 - Rede externa compartilhada — empresa fora do edital que concentra sócios de
   2+ licitantes via busca reversa (peso 25)
-- Mesmo endereço entre licitantes — normalização canônica (peso 20)
+- Mesmo titular de domínio (registro.br/RDAP) entre licitantes (peso 25)
 - Ponte via aprofundamento — sócio comum a empresas externas (SCPs) ligadas a
   2+ licitantes; só com `aprofundar=True` (peso 20)
+- Mesmo endereço entre licitantes — normalização canônica (peso 20)
+- Mesmo telefone entre licitantes (peso 20)
+- Mesmo domínio de e-mail (ignora provedores genéricos) (peso 15)
 - CNPJs sequenciais (peso 15)
 - Abertura próxima — constituição em datas próximas (peso 10)
 - Lance de cobertura (lances quase idênticos) / valores redondos (peso 5)

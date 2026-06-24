@@ -19,7 +19,8 @@ load_dotenv()
 from extrator.extrator import extrair_licitantes, MAX_CHARS, EXTRACTOR_PROMPT_VERSION
 from skills.consulta_cnpj.skill import consultar_cnpj
 from skills.busca_reversa_socios.skill import buscar_empresas_do_socio
-from skills.scoring_conluio.skill import calcular_score
+from skills.consulta_dominio.skill import consultar_dono_dominio
+from skills.scoring_conluio.skill import calcular_score, _dominio_email, PROVEDORES_GENERICOS
 from skills.gera_laudo.skill import gerar_laudo, LAUDO_PROMPT_VERSION
 from llm import reset_telemetria, telemetria
 import cache
@@ -86,6 +87,9 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
         dados["resultado"] = empresa.get("resultado")
         dados_empresas.append(dados)
         print(f"      → {cnpj} — {dados.get('razao_social', 'N/A')}")
+
+    print("\n[2.5] Enriquecendo domínios de e-mail (registro.br)...")
+    _enriquecer_dominios(dados_empresas)
 
     print("\n[3/5] Investigando sócios (busca reversa)...")
     expansao_socios = investigar_socios(dados_empresas)
@@ -233,6 +237,25 @@ def investigar_socios(dados_empresas: list) -> dict:
             expansao[chave] = externas
             print(f"      → {nome}: {len(externas)} empresa(s) vinculada(s)")
     return expansao
+
+
+def _enriquecer_dominios(dados_empresas: list) -> None:
+    """
+    Anexa a cada empresa o domínio do e-mail e o titular do domínio (registro.br),
+    para as regras mesmo_email_dominio e mesmo_dono_dominio. Ignora provedores
+    genéricos; consulta cada domínio uma única vez. Mutação in-place.
+    """
+    donos = {}  # domínio → titular (memoização por execução)
+    for emp in dados_empresas:
+        dom = _dominio_email(emp.get("email", ""))
+        if not dom or dom in PROVEDORES_GENERICOS:
+            continue
+        emp["email_dominio"] = dom
+        if dom not in donos:
+            donos[dom] = consultar_dono_dominio(dom)
+            print(f"      → {dom}: titular {donos[dom] or '—'}")
+        if donos[dom]:
+            emp["dominio_dono"] = donos[dom]
 
 
 def construir_grafo(dados_empresas: list, expansao_socios: dict = None) -> dict:

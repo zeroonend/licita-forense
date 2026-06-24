@@ -7,17 +7,27 @@ import re
 import unicodedata
 from datetime import datetime
 
-RULESET_VERSION = "scoring_conluio.v3"  # 7 regras (inclui lance redondo/cobertura)
+RULESET_VERSION = "scoring_conluio.v4"  # 10 regras (inclui telefone/email/dono de domínio)
 JANELA_ABERTURA_DIAS = 90    # aberturas dentro desta janela são consideradas próximas
 LIMIAR_COBERTURA = 0.005     # lances com diferença relativa <= 0.5% → lance de cobertura
 PASSO_REDONDO = 1000         # valor "redondo" = múltiplo de R$ 1.000 sem centavos
+
+# Provedores de e-mail genéricos: compartilhá-los NÃO é sinal de vínculo.
+PROVEDORES_GENERICOS = {
+    "gmail.com", "hotmail.com", "outlook.com", "outlook.com.br", "hotmail.com.br",
+    "yahoo.com", "yahoo.com.br", "live.com", "icloud.com", "bol.com.br",
+    "uol.com.br", "terra.com.br", "globo.com", "ig.com.br", "msn.com",
+}
 
 
 PESOS = {
     "socio_em_comum": 35,
     "rede_externa_compartilhada": 25,
+    "mesmo_dono_dominio": 25,
     "ponte_externa_aprofundada": 20,
     "mesmo_endereco": 20,
+    "mesmo_telefone": 20,
+    "mesmo_email_dominio": 15,
     "cnpj_sequencial": 15,
     "abertura_proxima": 10,
     "mesmo_contador": 10,
@@ -249,6 +259,55 @@ def calcular_score(grafo: dict) -> dict:
         })
         score += PESOS["lance_redondo"]
 
+    # Regra 8: Mesmo telefone entre licitantes.
+    telefones = {}
+    for emp in empresas:
+        tel = _so_digitos(emp.get("telefone", ""))
+        if len(tel) >= 8:
+            telefones.setdefault(tel, set()).add(emp.get("cnpj", ""))
+    for tel, cnpjs in telefones.items():
+        if len(cnpjs) > 1:
+            alertas.append({
+                "tipo": "mesmo_telefone",
+                "peso": PESOS["mesmo_telefone"],
+                "descricao": f"Mesmo telefone entre licitantes: {tel}",
+                "empresas": sorted(cnpjs),
+            })
+            score += PESOS["mesmo_telefone"]
+
+    # Regra 9: Mesmo domínio de e-mail (ignorando provedores genéricos).
+    dominios = {}
+    for emp in empresas:
+        d = _dominio_email(emp.get("email", ""))
+        if d and d not in PROVEDORES_GENERICOS:
+            dominios.setdefault(d, set()).add(emp.get("cnpj", ""))
+    for d, cnpjs in dominios.items():
+        if len(cnpjs) > 1:
+            alertas.append({
+                "tipo": "mesmo_email_dominio",
+                "peso": PESOS["mesmo_email_dominio"],
+                "descricao": f"Mesmo domínio de e-mail entre licitantes: @{d}",
+                "empresas": sorted(cnpjs),
+            })
+            score += PESOS["mesmo_email_dominio"]
+
+    # Regra 10: Mesmo dono de domínio (registro.br) — depende do enriquecimento
+    # (campo dominio_dono); sem ele, a regra simplesmente não dispara.
+    donos = {}
+    for emp in empresas:
+        dono = (emp.get("dominio_dono") or "").strip()
+        if dono:
+            donos.setdefault(dono, set()).add(emp.get("cnpj", ""))
+    for dono, cnpjs in donos.items():
+        if len(cnpjs) > 1:
+            alertas.append({
+                "tipo": "mesmo_dono_dominio",
+                "peso": PESOS["mesmo_dono_dominio"],
+                "descricao": f"Mesmo titular de domínio (registro.br) entre licitantes: {dono}",
+                "empresas": sorted(cnpjs),
+            })
+            score += PESOS["mesmo_dono_dominio"]
+
     # Classificação usa o score bruto (aditivo); score_geral é normalizado a 0–100
     # para exibição, mas score_bruto preserva o valor real para auditoria.
     nivel = _classificar_nivel(score)
@@ -276,6 +335,14 @@ def _normalizar_endereco(valor: str) -> str:
     s = unicodedata.normalize("NFKD", valor or "").encode("ascii", "ignore").decode()
     s = "".join(ch if ch.isalnum() else " " for ch in s.upper())
     return " ".join(s.split())
+
+
+def _dominio_email(email: str) -> str:
+    """Extrai o domínio (minúsculo) de um e-mail; '' se inválido."""
+    s = (email or "").strip().lower()
+    if "@" not in s:
+        return ""
+    return s.rsplit("@", 1)[1].strip()
 
 
 def _parse_valor(valor) -> float:
