@@ -601,6 +601,10 @@
         linha(`Situação: ${e.situacao || "—"}`);
         linha(`Lance: ${e.lance || "—"} · ${e.resultado || "—"}`);
         linha(`Abertura: ${e.data_abertura || "—"}`);
+        linha(`Endereço: ${e.endereco || "—"}`);
+        linha(`Telefone: ${e.telefone || "—"}`);
+        linha(`E-mail: ${e.email || "—"}`);
+        if (e.dominio_dono) linha(`Titular do domínio: ${e.dominio_dono}`);
       } else if (d.tipo === "externa") {
         const e = d.dados;
         titulo(e.razao_social || e.cnpj);
