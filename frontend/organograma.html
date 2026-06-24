@@ -298,7 +298,13 @@
       const grafo = dados.grafo || dados;
       const score = dados.score || {};
 
-      atualizarPainel(score);
+      // Mapa CNPJ (dígitos) → razão social, para nomear as empresas dos alertas.
+      const nomePorCnpj = {};
+      (grafo.empresas || []).forEach(e => {
+        nomePorCnpj[(e.cnpj || "").replace(/\D/g, "")] = e.razao_social || e.cnpj;
+      });
+
+      atualizarPainel(score, nomePorCnpj);
       desenharGrafo(grafo);
     }
 
@@ -312,7 +318,8 @@
       .then(render)
       .catch(err => { if (paramData) alert("Falha ao carregar " + paramData + ": " + err.message); });
 
-    function atualizarPainel(score) {
+    function atualizarPainel(score, nomePorCnpj) {
+      nomePorCnpj = nomePorCnpj || {};
       document.getElementById("score-num").textContent = score.score_geral ?? "—";
       const badge = document.getElementById("score-badge");
       const nivel = score.nivel_risco || "—";
@@ -343,6 +350,22 @@
         desc.style.marginTop = "6px";
         desc.textContent = a.descricao;
         div.append(tipo, peso, desc);
+
+        // Nomes das empresas envolvidas (resolve CNPJ→razão social; valores que
+        // já são nomes — ex.: regra de ponte — passam direto).
+        const envolvidas = (a.empresas || [])
+          .map(x => nomePorCnpj[String(x).replace(/\D/g, "")] || x)
+          .filter(Boolean);
+        if (envolvidas.length) {
+          const emp = document.createElement("div");
+          emp.style.cssText = "margin-top:6px;color:var(--text);font-size:11px";
+          const rot = document.createElement("span");
+          rot.style.color = "var(--muted)";
+          rot.textContent = "Empresas: ";
+          emp.appendChild(rot);
+          emp.appendChild(document.createTextNode(envolvidas.join(" · ")));
+          div.appendChild(emp);
+        }
         lista.appendChild(div);
       });
     }
