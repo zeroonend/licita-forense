@@ -14,6 +14,7 @@
       --muted: #8a8f9c;
       --empresa: #4a90d9;
       --socio: #d99a4a;
+      --socio-admin: #f0902e;
       --externa: #9a6dd9;
       --externa-scp: #d96d9a;
       --scp: #2fae9e;
@@ -211,6 +212,7 @@
     <div class="legenda">
       <div class="item"><span class="dot" style="background:var(--empresa)"></span> Empresa licitante</div>
       <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio</div>
+      <div class="item"><span class="dot" style="background:var(--socio-admin)"></span> Sócio administrador</div>
       <div class="item"><span class="dot" style="background:var(--externa)"></span> Empresa externa (não-SCP)</div>
       <div class="item"><span class="dot" style="background:var(--externa-scp)"></span> Empresa externa SCP</div>
       <div class="item"><span class="dot" style="background:var(--scp)"></span> Grupo de SCPs (aprofundamento)</div>
@@ -238,6 +240,16 @@
 
     const svg = d3.select("#svg");
     const tooltip = d3.select("#tooltip");
+
+    // Formata CNPJ de 14 dígitos; valores incompletos passam adiante como estão.
+    const formatarCnpj = (v) => {
+      const d = String(v || "").replace(/\D/g, "");
+      if (d.length !== 14) return v || "—";
+      return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+    };
+    // Espelha _e_administrador do scoring: cargo com poder de administração/controle.
+    const ehAdmin = (q) => /administrador|administradora|diretor|diretora|presidente|gerente|titular/i.test(q || "");
+
     let simulation;
     let zoomBehavior;   // comportamento d3.zoom (pan/zoom)
     let gZoom;          // container <g> que recebe a transformação
@@ -401,8 +413,13 @@
             nodes.push({
               id, tipo: "socio",
               label: s.nome_socio || "Sócio",
-              dados: s
+              dados: s,
+              admin: ehAdmin(s.qualificacao)
             });
+          } else if (ehAdmin(s.qualificacao)) {
+            // admin em qualquer das empresas ligadas marca o nó como administrador
+            const nd = nodes.find(n => n.id === idxSocio[chave]);
+            if (nd) nd.admin = true;
           }
           (socioLicitantes[chave] = socioLicitantes[chave] || new Set()).add(emp.cnpj);
           links.push({
@@ -563,6 +580,9 @@
         // Empresas externas SCP ganham cor própria (separadas das não-SCP).
         if (d.tipo === "externa" && ehSCP(d.dados && d.dados.razao_social))
           return getCss("--externa-scp");
+        // Sócio administrador (elo de controle) se destaca dos demais sócios.
+        if (d.tipo === "socio" && d.admin)
+          return getCss("--socio-admin");
         return CORES_TIPO[d.tipo] || getCss("--muted");
       };
       node.append("circle")
@@ -620,21 +640,24 @@
       if (d.tipo === "empresa") {
         const e = d.dados;
         titulo(e.razao_social);
-        linha(`CNPJ: ${e.cnpj || "—"}`);
+        linha(`CNPJ: ${formatarCnpj(e.cnpj)}`);
         linha(`Situação: ${e.situacao || "—"}`);
         linha(`Lance: ${e.lance || "—"} · ${e.resultado || "—"}`);
         linha(`Abertura: ${e.data_abertura || "—"}`);
         linha(`Endereço: ${e.endereco || "—"}`);
         linha(`Telefone: ${e.telefone || "—"}`);
         linha(`E-mail: ${e.email || "—"}`);
+        if (e.email_dominio)
+          linha(`Domínio: ${e.email_dominio}`);
         if (e.dominio_dono || e.dominio_dono_nome)
           linha(`Titular do domínio: ${e.dominio_dono_nome || e.dominio_dono}`);
       } else if (d.tipo === "externa") {
         const e = d.dados;
         titulo(e.razao_social || e.cnpj);
-        linha(`CNPJ: ${e.cnpj || "—"}`);
+        linha(`CNPJ: ${formatarCnpj(e.cnpj_completo || e.cnpj)}`);
         linha("Empresa externa (fora do edital)");
-        linha(`Qualificação do sócio: ${e.qualificacao || "—"}`);
+        linha(`Qualificação do sócio: ${e.qualificacao || "—"}`
+          + (ehAdmin(e.qualificacao) ? "  (administrador)" : ""));
         linha(`Situação: ${e.situacao || "—"}`);
       } else if (d.tipo === "scp_grupo") {
         const e = d.dados;
@@ -646,7 +669,8 @@
         const s = d.dados;
         titulo(s.nome_socio);
         linha(`CPF/CNPJ: ${s.cpf_cnpj_socio || "—"}`);
-        linha(`Qualificação: ${s.qualificacao || "—"}`);
+        linha(`Qualificação: ${s.qualificacao || "—"}`
+          + (d.admin ? "  (administrador — elo de controle)" : ""));
       }
       tooltip.style("opacity", 1);
       moverTooltip(ev);

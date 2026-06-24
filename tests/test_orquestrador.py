@@ -47,6 +47,26 @@ def test_construir_grafo_detecta_socio_em_comum():
     g = om.construir_grafo(dados)
     assert len(g["vinculos_suspeitos"]) == 1
     assert set(g["vinculos_suspeitos"][0]["empresas"]) == {"11111111000111", "22222222000122"}
+    assert g["vinculos_suspeitos"][0]["admin_em_todas"] is False  # sócios sem cargo
+
+
+def test_construir_grafo_marca_socio_administrador_em_ambas():
+    dados = [
+        {"cnpj": "11111111000111", "qsa": [
+            {"nome_socio": "MARIA", "cpf_cnpj_socio": "***9**", "qualificacao": "Sócio-Administrador"}]},
+        {"cnpj": "22222222000122", "qsa": [
+            {"nome_socio": "MARIA", "cpf_cnpj_socio": "***9**", "qualificacao": "Administrador"}]},
+    ]
+    v = om.construir_grafo(dados)["vinculos_suspeitos"][0]
+    assert v["admin_em_todas"] is True
+    assert v["qualificacoes"]["11111111000111"] == "Sócio-Administrador"
+
+
+def test_construir_grafo_completa_cnpj_das_externas():
+    dados = [{"cnpj": "11111111000111", "qsa": []}]
+    expansao = {"x|FULANO": [{"cnpj": "37083255", "razao_social": "BRAIN CARE"}]}
+    g = om.construir_grafo(dados, expansao)
+    assert g["expansao_socios"]["x|FULANO"][0]["cnpj_completo"] == "37083255000175"
 
 
 def test_aprofundar_rede_apenas_scp_e_limite(monkeypatch):

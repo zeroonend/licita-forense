@@ -20,7 +20,9 @@ from extrator.extrator import extrair_licitantes, MAX_CHARS, EXTRACTOR_PROMPT_VE
 from skills.consulta_cnpj.skill import consultar_cnpj
 from skills.busca_reversa_socios.skill import buscar_empresas_do_socio
 from skills.consulta_dominio.skill import consultar_dono_dominio
-from skills.scoring_conluio.skill import calcular_score, _dominio_email, PROVEDORES_GENERICOS
+from skills.scoring_conluio.skill import (
+    calcular_score, _dominio_email, PROVEDORES_GENERICOS, _e_administrador,
+)
 from skills.gera_laudo.skill import gerar_laudo, LAUDO_PROMPT_VERSION
 from skills.laudo_pdf.skill import gerar_pdf
 from llm import reset_telemetria, telemetria
@@ -311,7 +313,8 @@ def construir_grafo(dados_empresas: list, expansao_socios: dict = None) -> dict:
     reversa (empresas externas por sócio), quando disponível.
     """
     expansao_socios = expansao_socios or {}
-    socios_index = {}  # cpf_parcial+nome → [cnpjs]
+    socios_index = {}   # chave (cpf|nome) → [cnpjs]
+    qualif_index = {}   # chave → {cnpj: qualificação do sócio naquela empresa}
 
     for empresa in dados_empresas:
         cnpj = empresa.get("cnpj", "")
@@ -319,15 +322,34 @@ def construir_grafo(dados_empresas: list, expansao_socios: dict = None) -> dict:
             continue
         for socio in empresa.get("qsa", []):
             chave = f"{socio.get('cpf_cnpj_socio', '')}|{socio.get('nome_socio', '').upper()}"
-            if chave not in socios_index:
-                socios_index[chave] = []
-            socios_index[chave].append(cnpj)
+            socios_index.setdefault(chave, [])
+            if cnpj not in socios_index[chave]:
+                socios_index[chave].append(cnpj)
+            qualif_index.setdefault(chave, {})[cnpj] = socio.get("qualificacao", "")
 
-    vinculos_suspeitos = [
-        {"socio": chave.split("|")[1], "cpf": chave.split("|")[0], "empresas": cnpjs}
-        for chave, cnpjs in socios_index.items()
-        if len(cnpjs) > 1
-    ]
+    vinculos_suspeitos = []
+    for chave, cnpjs in socios_index.items():
+        if len(cnpjs) <= 1:
+            continue
+        quals = qualif_index.get(chave, {})
+        admins = [c for c in cnpjs if _e_administrador(quals.get(c, ""))]
+        vinculos_suspeitos.append({
+            "socio": chave.split("|")[1],
+            "cpf": chave.split("|")[0],
+            "empresas": cnpjs,
+            "qualificacoes": quals,
+            # administrador em TODAS as licitantes ligadas → vínculo de controle.
+            "admin_em_todas": len(admins) == len(cnpjs),
+            "admin_em_alguma": bool(admins),
+        })
+
+    # CNPJ completo (14 dígitos) das externas: a busca reversa só devolve a raiz
+    # de 8 dígitos; reconstruímos a matriz para exibir o número inteiro no grafo.
+    for lst in expansao_socios.values():
+        for ext in lst:
+            raiz = "".join(c for c in (ext.get("cnpj") or "") if c.isdigit())[:8]
+            if raiz and not ext.get("cnpj_completo"):
+                ext["cnpj_completo"] = _cnpj_matriz(raiz)
 
     return {
         "empresas": dados_empresas,
