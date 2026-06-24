@@ -22,6 +22,7 @@ from skills.busca_reversa_socios.skill import buscar_empresas_do_socio
 from skills.consulta_dominio.skill import consultar_dono_dominio
 from skills.scoring_conluio.skill import calcular_score, _dominio_email, PROVEDORES_GENERICOS
 from skills.gera_laudo.skill import gerar_laudo, LAUDO_PROMPT_VERSION
+from skills.laudo_pdf.skill import gerar_pdf
 from llm import reset_telemetria, telemetria
 import cache
 
@@ -376,8 +377,10 @@ if __name__ == "__main__":
     aprofundar = "--aprofundar" in sys.argv
     frontend = "--frontend" in sys.argv
     gravar_cache = "--gravar-cache" in sys.argv
+    pdf = "--pdf" in sys.argv
     if not args:
-        print("Uso: python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend] [--gravar-cache]")
+        print("Uso: python orquestrador/main.py <caminho_do_pdf> "
+              "[--aprofundar] [--frontend] [--gravar-cache] [--pdf]")
         sys.exit(1)
     resultado = investigar(args[0], aprofundar=aprofundar, gravar_cache=gravar_cache)
     ex = resultado["execution"]
@@ -388,5 +391,8 @@ if __name__ == "__main__":
         cam = _exportar_frontend(resultado)
         print(f"\n[frontend] Exportado para {cam}")
         print("Abra http://localhost:8000/organograma.html — o resultado carrega automaticamente.")
+    if pdf:
+        cam_pdf = gerar_pdf(resultado)
+        print(f"\n[pdf] Laudo gerado em {cam_pdf}")
     print("\n=== LAUDO ===")
     print(resultado["laudo"]["text"])
