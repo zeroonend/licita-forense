@@ -7,7 +7,7 @@ import re
 import unicodedata
 from datetime import datetime
 
-RULESET_VERSION = "scoring_conluio.v4"  # 10 regras (inclui telefone/email/dono de domínio)
+RULESET_VERSION = "scoring_conluio.v5"  # distingue sócio administrador em comum (vínculo de controle)
 JANELA_ABERTURA_DIAS = 90    # aberturas dentro desta janela são consideradas próximas
 LIMIAR_COBERTURA = 0.005     # lances com diferença relativa <= 0.5% → lance de cobertura
 PASSO_REDONDO = 1000         # valor "redondo" = múltiplo de R$ 1.000 sem centavos
@@ -20,7 +20,22 @@ PROVEDORES_GENERICOS = {
 }
 
 
+# Cargos que conferem poder de administração/controle. Um sócio que é
+# administrador em DUAS licitantes é elo bem mais forte para questionar conluio
+# do que um mero cotista — daí a regra dedicada com peso maior.
+_RE_ADMIN = re.compile(
+    r"administrador|administradora|diretor|diretora|presidente|gerente|titular",
+    re.IGNORECASE,
+)
+
+
+def _e_administrador(qualificacao: str) -> bool:
+    """True se a qualificação do sócio indica poder de administração/controle."""
+    return bool(_RE_ADMIN.search(qualificacao or ""))
+
+
 PESOS = {
+    "socio_administrador_em_comum": 45,
     "socio_em_comum": 35,
     "rede_externa_compartilhada": 25,
     "mesmo_dono_dominio": 25,
@@ -51,16 +66,24 @@ def calcular_score(grafo: dict) -> dict:
     empresas = grafo.get("empresas", [])
     vinculos = grafo.get("vinculos_suspeitos", [])
 
-    # Regra 1: Sócio em comum
+    # Regra 1: Sócio em comum — administrador em ambas pesa mais (vínculo de controle).
     for vinculo in vinculos:
-        alerta = {
-            "tipo": "socio_em_comum",
-            "peso": PESOS["socio_em_comum"],
-            "descricao": f"Sócio '{vinculo['socio']}' aparece em {len(vinculo['empresas'])} empresas licitantes: {', '.join(vinculo['empresas'])}",
-            "empresas": vinculo["empresas"]
-        }
-        alertas.append(alerta)
-        score += PESOS["socio_em_comum"]
+        emp = vinculo["empresas"]
+        quals = vinculo.get("qualificacoes") or {}
+        cargos = ", ".join(
+            f"{q}" for q in dict.fromkeys(quals.values()) if q
+        )
+        if vinculo.get("admin_em_todas"):
+            tipo = "socio_administrador_em_comum"
+            desc = (f"Sócio ADMINISTRADOR '{vinculo['socio']}' em {len(emp)} licitantes "
+                    f"(poder de controle nas duas — elo forte para questionar): "
+                    f"{', '.join(emp)}" + (f". Cargos: {cargos}" if cargos else ""))
+        else:
+            tipo = "socio_em_comum"
+            desc = (f"Sócio '{vinculo['socio']}' aparece em {len(emp)} empresas licitantes: "
+                    f"{', '.join(emp)}" + (f". Cargos: {cargos}" if cargos else ""))
+        alertas.append({"tipo": tipo, "peso": PESOS[tipo], "descricao": desc, "empresas": emp})
+        score += PESOS[tipo]
 
     # Regra 2: Mesmo endereço entre licitantes.
     # Normaliza para forma canônica (sem acento/pontuação, caixa única, espaços

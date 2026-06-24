@@ -1,7 +1,7 @@
 """Testes das regras determinísticas de scoring e dos normalizadores."""
 from skills.scoring_conluio.skill import (
     calcular_score, _so_digitos, _normalizar_endereco, _parse_data, _parse_valor,
-    _dominio_email, _classificar_nivel, RULESET_VERSION, PESOS,
+    _dominio_email, _classificar_nivel, _e_administrador, RULESET_VERSION, PESOS,
 )
 
 
@@ -63,6 +63,30 @@ def test_socio_em_comum():
     r = calcular_score(g)
     assert r["score_geral"] == PESOS["socio_em_comum"]
     assert r["alertas"][0]["tipo"] == "socio_em_comum"
+
+
+def test_e_administrador():
+    assert _e_administrador("Sócio-Administrador")
+    assert _e_administrador("Diretor")
+    assert _e_administrador("Presidente")
+    assert not _e_administrador("Sócio")
+    assert not _e_administrador("Sócio Ostensivo")
+    assert not _e_administrador(None)
+
+
+def test_socio_administrador_em_comum_pesa_mais():
+    g = _grafo(
+        [{"cnpj": "11111111000111"}, {"cnpj": "22222222000122"}],
+        vinculos=[{"socio": "MARIA", "cpf": "x",
+                   "empresas": ["11111111000111", "22222222000122"],
+                   "qualificacoes": {"11111111000111": "Administrador",
+                                     "22222222000122": "Sócio-Administrador"},
+                   "admin_em_todas": True}],
+    )
+    r = calcular_score(g)
+    assert r["alertas"][0]["tipo"] == "socio_administrador_em_comum"
+    assert r["score_geral"] == PESOS["socio_administrador_em_comum"]
+    assert PESOS["socio_administrador_em_comum"] > PESOS["socio_em_comum"]
 
 
 def test_cnpj_vazio_nao_quebra():
