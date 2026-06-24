@@ -1,0 +1,12 @@
+.env
+*.pdf
+*.PDF
+laudos/
+dumps/
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+*.egg-info/
+.idea/
+.vscode/
