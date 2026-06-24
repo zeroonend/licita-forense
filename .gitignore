@@ -17,3 +17,6 @@ venv/
 # Banco SQLite (dados reais de investigação)
 dados/
 *.db
+
+# Uploads do painel web (PDFs enviados)
+uploads/

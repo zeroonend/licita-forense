@@ -59,7 +59,24 @@ python -m http.server 8000 -d frontend           # serve o organograma
 # abra http://localhost:8000/organograma.html (carrega o último resultado)
 ```
 
+## Painel web (para funcionários, sem terminal)
+
+Camada FastAPI sobre o pipeline: subir PDF e investigar pelo navegador,
+histórico de execuções e cruzamento entre editais (lê o SQLite). Sem
+login/multi-tenant por enquanto — estrutura preparada para virar SaaS depois.
+
+```bash
+pip install -r requirements.txt
+uvicorn web.server:app --reload      # ou: python -m web.server
+# abra http://localhost:8000
+```
+
+- `POST /api/investigacoes` — sobe o PDF e dispara a investigação (background)
+- `GET /api/investigacoes` — histórico · `GET /api/cruzamento/recorrentes` — recorrentes
+- `GET /api/investigacoes/<id>/laudo.pdf` — laudo · organograma via `?data=/api/investigacoes/<id>/artefato`
+
 ## O que NUNCA vai ao git
 
-`.env`, PDFs de editais, laudos gerados, artefatos de execução
-(`execucoes/`, `frontend/resultado-*.json`), dumps da Receita Federal.
+`.env`, PDFs de editais (incl. `uploads/`), laudos gerados, artefatos de
+execução (`execucoes/`, `frontend/resultado-*.json`), o banco (`dados/`,
+`*.db`), dumps da Receita Federal.

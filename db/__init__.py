@@ -211,6 +211,23 @@ def editais_da_empresa(conn, cnpj: str) -> list:
     return [dict(r) for r in rows]
 
 
+def listar_execucoes(conn, limite: int = 100) -> list:
+    """Execuções gravadas, mais recentes primeiro — para o histórico do painel."""
+    rows = conn.execute(
+        "SELECT id, criado_em, edital_numero, orgao, objeto, score_geral, "
+        "       nivel_risco, total_alertas, pdf_sha256, artefato_path "
+        "FROM execucoes ORDER BY criado_em DESC LIMIT ?",
+        (limite,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def execucao(conn, eid: str) -> dict:
+    """Uma execução pelo id (ou None)."""
+    row = conn.execute("SELECT * FROM execucoes WHERE id = ?", (eid,)).fetchone()
+    return dict(row) if row else None
+
+
 def recorrentes(conn, min_editais: int = 2) -> list:
     """
     Sócios/empresas que aparecem em >= min_editais editais distintos — os elos

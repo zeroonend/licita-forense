@@ -7,5 +7,10 @@ pdfplumber>=0.11.0
 fpdf2>=2.8.0
 rich>=13.0.0
 
+# Camada web (painel para funcionários)
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+
 # Desenvolvimento/testes
 pytest>=8.0
