@@ -75,10 +75,13 @@ def calcular_score(grafo: dict) -> dict:
             })
             score += PESOS["cnpj_sequencial"]
 
+    # Classificação usa o score bruto (aditivo); score_geral é normalizado a 0–100
+    # para exibição, mas score_bruto preserva o valor real para auditoria.
     nivel = _classificar_nivel(score)
 
     return {
-        "score_geral": score,
+        "score_geral": min(score, 100),
+        "score_bruto": score,
         "nivel_risco": nivel,
         "alertas": alertas,
         "total_alertas": len(alertas)

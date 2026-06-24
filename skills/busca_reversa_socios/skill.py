@@ -18,6 +18,10 @@ def buscar_empresas_do_socio(nome: str, cpf_parcial: str = None) -> list:
     cpf_parcial: 6 dígitos centrais do CPF (mascarado pela Receita)
     Retorna lista de CNPJs.
     """
+    if not CNPJA_KEY:
+        print("      [busca reversa indisponível: CNPJA_API_KEY não configurada]")
+        return []
+
     headers = {"Authorization": CNPJA_KEY}
     params = {"name": nome}
     if cpf_parcial:

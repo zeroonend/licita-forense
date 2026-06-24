@@ -32,6 +32,8 @@ def _limpar_cnpj(cnpj: str) -> str:
 
 
 def _consultar_cnpja(cnpj: str) -> dict:
+    if not CNPJA_KEY:
+        raise RuntimeError("CNPJA_API_KEY não configurada (verifique o .env)")
     headers = {"Authorization": CNPJA_KEY}
     r = httpx.get(f"{CNPJA_BASE}/office/{cnpj}", headers=headers, timeout=15)
     r.raise_for_status()

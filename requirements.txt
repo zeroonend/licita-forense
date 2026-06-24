@@ -1,6 +1,6 @@
-anthropic
-httpx
-python-dotenv
-psycopg2-binary
-pdfplumber
-rich
+anthropic>=0.40.0,<1.0
+httpx>=0.27.0,<1.0
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9.9
+pdfplumber>=0.11.0
+rich>=13.0.0
