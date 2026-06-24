@@ -167,6 +167,20 @@ def _persistir_artefato(artefato: dict, dir_saida: str = "execucoes") -> str:
     return caminho
 
 
+def _exportar_frontend(artefato: dict, base_dir: str = None) -> str:
+    """
+    Exporta o artefato para o organograma consumir automaticamente
+    (frontend/resultado-ultimo.json — carregado por padrão pela página).
+    """
+    base = base_dir or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+    os.makedirs(base, exist_ok=True)
+    caminho = os.path.join(base, "resultado-ultimo.json")
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(artefato, f, ensure_ascii=False, indent=2)
+    return caminho
+
+
 def investigar_socios(dados_empresas: list) -> dict:
     """
     Busca reversa: para cada sócio único dos licitantes, consulta a CNPJá
@@ -299,13 +313,18 @@ if __name__ == "__main__":
     import sys
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     aprofundar = "--aprofundar" in sys.argv
+    frontend = "--frontend" in sys.argv
     if not args:
-        print("Uso: python orquestrador/main.py <caminho_do_pdf> [--aprofundar]")
+        print("Uso: python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend]")
         sys.exit(1)
     resultado = investigar(args[0], aprofundar=aprofundar)
     ex = resultado["execution"]
     print(f"\n=== EXECUÇÃO {ex['id']} ({ex['status']}) ===")
     print(f"PDF sha256: {ex['input_pdf_sha256'][:16]}... | extrator: {ex['components']['extractor_model']}"
           f" | laudo: {resultado['laudo']['mode']}/{ex['components']['laudo_model']}")
+    if frontend:
+        cam = _exportar_frontend(resultado)
+        print(f"\n[frontend] Exportado para {cam}")
+        print("Abra http://localhost:8000/organograma.html — o resultado carrega automaticamente.")
     print("\n=== LAUDO ===")
     print(resultado["laudo"]["text"])

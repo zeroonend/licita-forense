@@ -42,6 +42,14 @@ python orquestrador/main.py <caminho_do_pdf> [--aprofundar]
 
 Cada execução grava o artefato versionado em `execucoes/<id>.json`.
 
+Para visualizar no organograma:
+
+```bash
+python orquestrador/main.py <pdf> --frontend     # exporta para o frontend
+python -m http.server 8000 -d frontend           # serve o organograma
+# abra http://localhost:8000/organograma.html (carrega o último resultado)
+```
+
 ## O que NUNCA vai ao git
 
 `.env`, PDFs de editais, laudos gerados, artefatos de execução

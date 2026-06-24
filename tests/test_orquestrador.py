@@ -32,6 +32,13 @@ def test_persistir_artefato(tmp_path):
     assert json.load(open(caminho)) == artefato
 
 
+def test_exportar_frontend(tmp_path):
+    artefato = {"execution": {"id": "z"}, "grafo": {}, "score": {}}
+    caminho = om._exportar_frontend(artefato, base_dir=str(tmp_path))
+    assert caminho.endswith("resultado-ultimo.json")
+    assert json.load(open(caminho)) == artefato
+
+
 def test_construir_grafo_detecta_socio_em_comum():
     dados = [
         {"cnpj": "11111111000111", "qsa": [{"nome_socio": "JOAO", "cpf_cnpj_socio": "***1**"}]},
