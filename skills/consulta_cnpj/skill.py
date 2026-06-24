@@ -8,9 +8,10 @@ consultam primeiro a BrasilAPI (gratuita), economizando créditos da CNPJá.
 """
 import os
 import re
-import httpx
 from dotenv import load_dotenv
 load_dotenv()
+
+import cache
 
 CNPJA_KEY = os.getenv("CNPJA_API_KEY")
 CNPJA_BASE = "https://api.cnpja.com"
@@ -57,16 +58,13 @@ def _consultar_cnpja(cnpj: str) -> dict:
     if not CNPJA_KEY:
         raise RuntimeError("CNPJA_API_KEY não configurada (verifique o .env)")
     headers = {"Authorization": CNPJA_KEY}
-    r = httpx.get(f"{CNPJA_BASE}/office/{cnpj}", headers=headers, timeout=15)
-    r.raise_for_status()
-    data = r.json()
+    data, _ = cache.http_get(f"{CNPJA_BASE}/office/{cnpj}", headers=headers)
     return _normalizar_cnpja(data)
 
 
 def _consultar_brasilapi(cnpj: str) -> dict:
-    r = httpx.get(f"{BRASILAPI_BASE}/{cnpj}", timeout=15)
-    r.raise_for_status()
-    return _normalizar_brasilapi(r.json())
+    data, _ = cache.http_get(f"{BRASILAPI_BASE}/{cnpj}")
+    return _normalizar_brasilapi(data)
 
 
 def _normalizar_cnpja(data: dict) -> dict:

@@ -31,7 +31,18 @@ objeto `execution` para auditoria/reprodutibilidade:
 Demais chaves: `licitacao`, `grafo`, `score` (com `ruleset_version`), `laudo`
 (`mode` llm|template + provider/model/generated_at) e `warnings`.
 
-Pendente (P1): cache/replay e captura bruta de request/response das APIs.
+### Cache / replay (determinismo)
+
+O módulo `cache` intercepta chamadas externas (HTTP da CNPJá/BrasilAPI e LLM)
+em três modos:
+
+- `off`: chama normalmente; só registra a trilha (`external_calls`).
+- `record` (`investigar(..., gravar_cache=True)`): chama e grava as respostas
+  no artefato (`cache_store`).
+- `replay` (`reexecutar_replay(artefato, pdf)`): **nenhuma chamada externa
+  nova** — tudo vem do `cache_store`; reproduz o laudo de forma idêntica.
+
+Headers (API key) nunca entram na trilha nem no store.
 
 ## Fontes de dados (hierarquia)
 

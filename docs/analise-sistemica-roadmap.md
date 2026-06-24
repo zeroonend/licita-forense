@@ -118,8 +118,9 @@ Registrar, no minimo:
 ### P1 - Persistencia, replay e documentos longos
 
 1. Estender o schema SQL com tabelas de `execucoes`, `artefatos`, `external_calls` e `evidencias`.
-2. Implementar cache/replay para CNPJa, BrasilAPI e chamadas LLM.
-3. Definir modo deterministico: em `replay`, nenhuma chamada externa nova deve ocorrer.
+2. [x] Cache/replay para CNPJa, BrasilAPI e LLM (modulo `cache`; store no artefato).
+3. [x] Modo deterministico: em `replay`, nenhuma chamada externa nova ocorre
+   (validado: laudo reproduzido byte a byte via `reexecutar_replay`).
 4. [x] Truncamento substituido por chunking com sobreposicao e mesclagem (dedup por CNPJ/nome).
 5. Registrar warnings estruturados quando a cobertura do documento for parcial.
 
