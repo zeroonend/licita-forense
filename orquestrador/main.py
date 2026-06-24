@@ -2,30 +2,48 @@
 Orquestrador principal — pipeline determinístico de investigação.
 Recebe caminho de documento (PDF) e retorna grafo de vínculos + laudo.
 """
+import os
+import sys
 import json
-from pathlib import Path
+import uuid
+import hashlib
+import datetime
+
+# Permite rodar como script (`python orquestrador/main.py`) garantindo que a
+# raiz do repositório esteja no sys.path para os imports de pacote abaixo.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from dotenv import load_dotenv
 load_dotenv()
 
-from extrator.extrator import extrair_licitantes
+from extrator.extrator import extrair_licitantes, MAX_CHARS, EXTRACTOR_PROMPT_VERSION
 from skills.consulta_cnpj.skill import consultar_cnpj
 from skills.busca_reversa_socios.skill import buscar_empresas_do_socio
 from skills.scoring_conluio.skill import calcular_score
-from skills.gera_laudo.skill import gerar_laudo
+from skills.gera_laudo.skill import gerar_laudo, LAUDO_PROMPT_VERSION
+from llm import reset_telemetria, telemetria
+
+SCHEMA_VERSION = "investigation_result.v1"
 
 
 def investigar(caminho_pdf: str, aprofundar: bool = False,
-               limite_aprofundamento: int = 30) -> dict:
+               limite_aprofundamento: int = 30, persistir: bool = True) -> dict:
     """
     Pipeline completo de investigação.
-    Retorna dict com grafo, alertas e laudo.
+    Retorna um artefato `investigation_result.v1` (schema versionado, com
+    metadados de execução para rastreabilidade/auditoria forense).
 
     aprofundar: se True, executa o 2º nível (consulta o QSA das empresas
         externas da busca reversa; SCPs via BrasilAPI grátis). Opt-in porque
         faz dezenas de chamadas adicionais.
     limite_aprofundamento: teto de empresas externas a aprofundar.
+    persistir: se True, grava o artefato em execucoes/<id>.json.
     """
+    reset_telemetria()
     warnings = []
+    execucao_id = str(uuid.uuid4())
+    started_at = _agora()
+    pdf_sha256, pdf_bytes = _hash_arquivo(caminho_pdf)
 
     print(f"\n[1/5] Extraindo licitantes de {caminho_pdf}...")
     licitantes = extrair_licitantes(caminho_pdf)
@@ -70,15 +88,83 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
     print(f"      → Score: {score['score_geral']} | Alertas: {len(score['alertas'])}")
 
     print("\n[5/5] Gerando laudo...")
-    laudo = gerar_laudo(grafo, score, licitantes["meta"])
+    laudo_texto = gerar_laudo(grafo, score, licitantes["meta"])
 
-    return {
-        "meta": licitantes["meta"],
+    # Monta o artefato versionado com a trilha de execução.
+    chamadas_llm = telemetria()
+    por_finalidade = {c["purpose"]: c for c in chamadas_llm}
+    call_extr = por_finalidade.get("extracao")
+    call_laudo = por_finalidade.get("laudo")
+
+    artefato = {
+        "schema_version": SCHEMA_VERSION,
+        "execution": {
+            "id": execucao_id,
+            "started_at": started_at,
+            "finished_at": _agora(),
+            "status": "partial" if warnings else "success",
+            "input_pdf_sha256": pdf_sha256,
+            "input_pdf_bytes": pdf_bytes,
+            "source_file_name": os.path.basename(caminho_pdf),
+            "parameters": {
+                "extractor_max_chars": MAX_CHARS,
+                "aprofundar": aprofundar,
+                "limite_aprofundamento": limite_aprofundamento,
+            },
+            "components": {
+                "extractor_model": call_extr["model"] if call_extr else None,
+                "laudo_model": call_laudo["model"] if call_laudo else None,
+                "prompt_versions": {
+                    "extractor": EXTRACTOR_PROMPT_VERSION,
+                    "laudo": LAUDO_PROMPT_VERSION,
+                },
+                "ruleset_version": score.get("ruleset_version"),
+                "llm_calls": chamadas_llm,
+            },
+        },
+        "licitacao": licitantes["meta"],
         "grafo": grafo,
         "score": score,
-        "laudo": laudo,
-        "warnings": warnings
+        "laudo": {
+            "mode": "llm" if call_laudo else "template",
+            "text": laudo_texto,
+            "provider": call_laudo["provider"] if call_laudo else None,
+            "model": call_laudo["model"] if call_laudo else None,
+            "generated_at": _agora(),
+        },
+        "warnings": warnings,
     }
+
+    if persistir:
+        artefato["execution"]["artifact_path"] = _persistir_artefato(artefato)
+        print(f"      [artefato salvo: {artefato['execution']['artifact_path']}]")
+
+    return artefato
+
+
+def _agora() -> str:
+    """Timestamp UTC em ISO-8601 (para a trilha de execução)."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _hash_arquivo(caminho: str):
+    """SHA-256 e tamanho em bytes do arquivo de entrada (integridade do input)."""
+    h = hashlib.sha256()
+    total = 0
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(8192), b""):
+            h.update(bloco)
+            total += len(bloco)
+    return h.hexdigest(), total
+
+
+def _persistir_artefato(artefato: dict, dir_saida: str = "execucoes") -> str:
+    """Grava o artefato versionado em execucoes/<id>.json e retorna o caminho."""
+    os.makedirs(dir_saida, exist_ok=True)
+    caminho = os.path.join(dir_saida, f"investigacao_{artefato['execution']['id']}.json")
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(artefato, f, ensure_ascii=False, indent=2)
+    return caminho
 
 
 def investigar_socios(dados_empresas: list) -> dict:
@@ -217,5 +303,9 @@ if __name__ == "__main__":
         print("Uso: python orquestrador/main.py <caminho_do_pdf> [--aprofundar]")
         sys.exit(1)
     resultado = investigar(args[0], aprofundar=aprofundar)
+    ex = resultado["execution"]
+    print(f"\n=== EXECUÇÃO {ex['id']} ({ex['status']}) ===")
+    print(f"PDF sha256: {ex['input_pdf_sha256'][:16]}... | extrator: {ex['components']['extractor_model']}"
+          f" | laudo: {resultado['laudo']['mode']}/{ex['components']['laudo_model']}")
     print("\n=== LAUDO ===")
-    print(resultado["laudo"])
+    print(resultado["laudo"]["text"])

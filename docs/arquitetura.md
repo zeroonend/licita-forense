@@ -8,12 +8,30 @@ Todo encanamento é código determinístico para garantir valor probatório.
 
 ## Fluxo
 
-PDF upload → Extrator (Claude API) → CNPJs + lances
+PDF upload → Extrator (LLM) → CNPJs + lances
 → consulta_cnpj (CNPJá) → QSA de cada empresa
 → construir_grafo → detecta sócios em comum
+→ [opcional] aprofundar_rede → QSA das externas (SCPs via BrasilAPI grátis)
 → scoring_conluio → score + alertas CADE
-→ gera_laudo (Claude API) → laudo investigativo
+→ gera_laudo (LLM, fallback template) → laudo investigativo
+→ artefato investigation_result.v1 (persistido em execucoes/<id>.json)
 → organograma.html → visualização interativa
+
+## Saída versionada e rastreabilidade (forense)
+
+`investigar()` retorna e persiste um artefato `investigation_result.v1` com um
+objeto `execution` para auditoria/reprodutibilidade:
+
+- `id`, `started_at`, `finished_at`, `status` (success|partial);
+- `input_pdf_sha256` + `input_pdf_bytes` (integridade do input);
+- `parameters` efetivos (max_chars, aprofundar, limite);
+- `components`: modelos **efetivamente usados** (via telemetria), versões de
+  prompt (`extractor.v1`, `laudo.v1`), `ruleset_version` e trilha de `llm_calls`.
+
+Demais chaves: `licitacao`, `grafo`, `score` (com `ruleset_version`), `laudo`
+(`mode` llm|template + provider/model/generated_at) e `warnings`.
+
+Pendente (P1): cache/replay e captura bruta de request/response das APIs.
 
 ## Fontes de dados (hierarquia)
 

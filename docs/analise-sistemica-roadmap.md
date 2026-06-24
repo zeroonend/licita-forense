@@ -105,13 +105,15 @@ Registrar, no minimo:
 
 ## Roadmap priorizado
 
-### P0 - Baseline probatorio e contrato
+### P0 - Baseline probatorio e contrato — CONCLUIDO
 
-1. Criar schema JSON versionado para a saida do orquestrador.
-2. Incluir objeto `execution` com ID, timestamps, hash do PDF, parametros e versoes de componentes.
-3. Separar `licitacao`/`meta` de `grafo` para reduzir acoplamento com a extracao.
-4. Persistir artefato final em arquivo JSON por execucao.
-5. Atualizar README e arquitetura para distinguir o que e deterministico hoje do que depende de LLM/API.
+1. [x] Schema JSON versionado `investigation_result.v1` para a saida do orquestrador.
+2. [x] Objeto `execution` com ID, timestamps, hash SHA-256 do PDF, parametros e
+   versoes de componentes (modelos efetivamente usados via telemetria,
+   prompt_versions, ruleset_version, trilha de llm_calls).
+3. [x] `licitacao` separada de `grafo`.
+4. [x] Artefato persistido por execucao em `execucoes/<id>.json`.
+5. [x] README e arquitetura atualizados (LLM vs deterministico; saida versionada).
 
 ### P1 - Persistencia, replay e documentos longos
 

@@ -5,6 +5,7 @@ dumps/
 exemple/
 # Resultados de investigação contêm nomes de sócios reais — não versionar.
 frontend/resultado-*.json
+execucoes/
 __pycache__/
 *.pyc
 .DS_Store

@@ -5,14 +5,16 @@ Detecta potencial conluio e cartel entre licitantes via cruzamento de dados soci
 
 ## Arquitetura
 
-Pipeline determinístico (mesmo input → mesmo output, para valor probatório):
+Pipeline com encanamento determinístico (LLM só na extração e no laudo), com
+saída versionada e trilha de execução para valor probatório:
 
 1. Upload de documentos (edital, ata, resultado, propostas)
-2. Extração estruturada via Claude API → {cnpjs, lances, resultado}
-3. Investigação societária via CNPJá API (QSA, busca reversa de sócios)
+2. Extração estruturada via LLM (Anthropic→Gemini, fallback) → {cnpjs, lances, resultado}
+3. Investigação societária via CNPJá API (QSA, busca reversa de sócios); 2º nível opcional
 4. Scoring de conluio (regras determinísticas CADE)
-5. Laudo gerado pelo Claude API
-6. Visualização em organograma interativo
+5. Laudo via LLM (com fallback para template determinístico)
+6. Artefato `investigation_result.v1` persistido por execução (hash do PDF, modelos, timestamps)
+7. Visualização em organograma interativo
 
 ## Skills
 
@@ -33,11 +35,14 @@ Pipeline determinístico (mesmo input → mesmo output, para valor probatório):
 
 ```bash
 cp .env.example .env
-# preencha as variáveis
+# preencha as variáveis (ANTHROPIC_API_KEY e/ou GEMINI_API_KEY, CNPJA_API_KEY)
 pip install -r requirements.txt
-python orquestrador/main.py
+python orquestrador/main.py <caminho_do_pdf> [--aprofundar]
 ```
+
+Cada execução grava o artefato versionado em `execucoes/<id>.json`.
 
 ## O que NUNCA vai ao git
 
-`.env`, PDFs de editais, laudos gerados, dumps da Receita Federal.
+`.env`, PDFs de editais, laudos gerados, artefatos de execução
+(`execucoes/`, `frontend/resultado-*.json`), dumps da Receita Federal.
