@@ -57,6 +57,7 @@ def gerar_pdf(artefato: dict, caminho_saida: str = None) -> str:
     _desenhar_rede(pdf, empresas, score.get("alertas", []))
     _tabela_licitantes(pdf, empresas)
     _lista_alertas(pdf, empresas, score.get("alertas", []))
+    _rede_aprofundada(pdf, grafo)
     _texto_laudo(pdf, laudo.get("text", ""))
     _rodape(pdf, ex)
 
@@ -170,6 +171,64 @@ def _lista_alertas(pdf, empresas, alertas):
             pdf.set_text_color(0, 0, 0)
         pdf.ln(1)
     pdf.ln(1)
+
+
+def _rede_aprofundada(pdf, grafo):
+    """
+    2º nível: empresas externas dos sócios dos licitantes. Mostrado como texto
+    (não como grafo) para não poluir o desenho — resume a escala da rede de SCPs
+    e os sócios que conectam muitas empresas externas (possíveis elos do grupo).
+    """
+    ap = (grafo or {}).get("aprofundamento") or {}
+    if not ap:
+        return
+    scps = [v for v in ap.values() if "SCP" in (v.get("razao_social", "") or "").upper().split()]
+    n_free = sum(1 for v in ap.values() if v.get("fonte") == "brasilapi")
+
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _s("Rede externa aprofundada (2o nivel)"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 5, _s(
+        f"{len(ap)} empresas externas dos socios dos licitantes foram aprofundadas "
+        f"({len(scps)} delas SCPs). {n_free} consultadas via BrasilAPI (gratuito, "
+        f"0 creditos CNPJa)."))
+    pdf.ln(1)
+
+    # Sócios que conectam mais empresas externas (hubs da rede / possíveis laranjas).
+    hubs = sorted(
+        ((k.split("|")[-1], k.split("|")[0] if "|" in k else "", len(v))
+         for k, v in (grafo.get("expansao_socios") or {}).items()),
+        key=lambda t: t[2], reverse=True,
+    )[:10]
+    if hubs:
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 5, _s("Socios que concentram mais empresas externas:"),
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_fill_color(235, 235, 235)
+        larg = (108, 42, 40)
+        for t, w in zip(("Socio", "CPF/CNPJ", "Nº empresas"), larg):
+            pdf.cell(w, 6, _s(t), border=1, fill=True)
+        pdf.ln()
+        pdf.set_font("Helvetica", "", 8)
+        for nome, doc, qtd in hubs:
+            for v, w in zip((nome[:64], doc or "-", str(qtd)), larg):
+                pdf.cell(w, 6, _s(v), border=1)
+            pdf.ln()
+        pdf.ln(1)
+
+    # Amostra de SCPs aprofundadas (evidência da malha societária comum).
+    if scps:
+        nomes = sorted({(v.get("razao_social") or "").strip() for v in scps if v.get("razao_social")})
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(90, 90, 90)
+        pdf.set_x(pdf.l_margin)
+        amostra = "; ".join(n[:48] for n in nomes[:15])
+        extra = f" (+{len(nomes) - 15} outras)" if len(nomes) > 15 else ""
+        pdf.multi_cell(0, 4, _s("SCPs identificadas: " + amostra + extra))
+        pdf.set_text_color(0, 0, 0)
+    pdf.ln(2)
 
 
 def _texto_laudo(pdf, texto):
