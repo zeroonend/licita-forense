@@ -14,6 +14,7 @@
       --muted: #8a8f9c;
       --empresa: #4a90d9;
       --socio: #d99a4a;
+      --externa: #9a6dd9;
       --vinculo: #e05252;
       --critico: #e05252;
       --alto: #e08a52;
@@ -177,6 +178,7 @@
     <div class="legenda">
       <div class="item"><span class="dot" style="background:var(--empresa)"></span> Empresa licitante</div>
       <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio</div>
+      <div class="item"><span class="dot" style="background:var(--externa)"></span> Empresa externa (busca reversa)</div>
       <div class="item"><span class="dot" style="background:var(--vinculo)"></span> Vínculo suspeito</div>
     </div>
     <div id="tooltip"></div>
@@ -229,6 +231,16 @@
       desenharGrafo(grafo);
     }
 
+    // Auto-carregamento opcional: ?data=arquivo.json busca e renderiza direto,
+    // sem upload manual (útil para servir a saída do orquestrador via HTTP).
+    const paramData = new URLSearchParams(location.search).get("data");
+    if (paramData) {
+      fetch(paramData)
+        .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(render)
+        .catch(err => alert("Falha ao carregar " + paramData + ": " + err.message));
+    }
+
     function atualizarPainel(score) {
       document.getElementById("score-num").textContent = score.score_geral ?? "—";
       const badge = document.getElementById("score-badge");
@@ -274,6 +286,7 @@
       const links = [];
       const idxEmpresa = {};
       const idxSocio = {};
+      const socioLicitantes = {};  // chave do sócio → Set de CNPJs de licitantes
 
       (grafo.empresas || []).forEach(emp => {
         const id = "emp:" + emp.cnpj;
@@ -297,12 +310,59 @@
               dados: s
             });
           }
+          (socioLicitantes[chave] = socioLicitantes[chave] || new Set()).add(emp.cnpj);
           links.push({
             source: idxSocio[chave],
             target: idxEmpresa[emp.cnpj],
             suspeito: false
           });
         });
+      });
+
+      // Expansão da busca reversa: empresas FORA do edital onde os sócios também
+      // aparecem. Uma externa ligada a 2+ licitantes é um vínculo oculto (suspeito).
+      const idxExterna = {};
+      const externaLicitantes = {};  // raiz externa → Set de CNPJs de licitantes
+      // Busca reversa devolve raiz de CNPJ (8 dígitos); comparamos por raiz.
+      const raiz = (v) => (v || "").replace(/\D/g, "").slice(0, 8);
+      const raizesLicitantes = new Set((grafo.empresas || []).map(e => raiz(e.cnpj)));
+
+      Object.entries(grafo.expansao_socios || {}).forEach(([chave, externas]) => {
+        const idSocio = idxSocio[chave];
+        if (!idSocio) return;  // sócio não está em nenhum licitante renderizado
+        const licitantesDoSocio = socioLicitantes[chave] || new Set();
+        (externas || []).forEach(ext => {
+          const cnpjExt = raiz(ext.cnpj);
+          // Empresas do próprio edital já estão no grafo principal.
+          if (!cnpjExt || raizesLicitantes.has(cnpjExt)) return;
+          if (!idxExterna[cnpjExt]) {
+            const id = "ext:" + cnpjExt;
+            idxExterna[cnpjExt] = id;
+            nodes.push({
+              id, tipo: "externa",
+              label: ext.razao_social || cnpjExt,
+              dados: ext
+            });
+          }
+          externaLicitantes[cnpjExt] = externaLicitantes[cnpjExt] || new Set();
+          licitantesDoSocio.forEach(c => externaLicitantes[cnpjExt].add(c));
+          links.push({
+            source: idSocio,
+            target: idxExterna[cnpjExt],
+            suspeito: false,
+            externa: true
+          });
+        });
+      });
+
+      // Marca como suspeitos os vínculos que chegam a uma externa compartilhada.
+      const externasSuspeitas = new Set(
+        Object.entries(externaLicitantes)
+          .filter(([, set]) => set.size > 1)
+          .map(([cnpj]) => "ext:" + cnpj)
+      );
+      links.forEach(l => {
+        if (l.externa && externasSuspeitas.has(l.target)) l.suspeito = true;
       });
 
       // Marca como suspeitos os vínculos de sócios em comum
@@ -332,9 +392,14 @@
           .on("drag", dragging)
           .on("end", dragEnd));
 
+      const CORES_TIPO = {
+        empresa: getCss("--empresa"),
+        socio: getCss("--socio"),
+        externa: getCss("--externa"),
+      };
       node.append("circle")
-        .attr("r", d => d.tipo === "empresa" ? 16 : 10)
-        .attr("fill", d => d.tipo === "empresa" ? getCss("--empresa") : getCss("--socio"));
+        .attr("r", d => d.tipo === "empresa" ? 16 : (d.tipo === "externa" ? 12 : 10))
+        .attr("fill", d => CORES_TIPO[d.tipo] || getCss("--muted"));
 
       node.append("text")
         .attr("x", 20).attr("y", 4)
@@ -385,6 +450,13 @@
         linha(`Situação: ${e.situacao || "—"}`);
         linha(`Lance: ${e.lance || "—"} · ${e.resultado || "—"}`);
         linha(`Abertura: ${e.data_abertura || "—"}`);
+      } else if (d.tipo === "externa") {
+        const e = d.dados;
+        titulo(e.razao_social || e.cnpj);
+        linha(`CNPJ: ${e.cnpj || "—"}`);
+        linha("Empresa externa (fora do edital)");
+        linha(`Qualificação do sócio: ${e.qualificacao || "—"}`);
+        linha(`Situação: ${e.situacao || "—"}`);
       } else {
         const s = d.dados;
         titulo(s.nome_socio);

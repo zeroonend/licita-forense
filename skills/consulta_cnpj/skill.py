@@ -28,7 +28,7 @@ def consultar_cnpj(cnpj: str) -> dict:
 
 
 def _limpar_cnpj(cnpj: str) -> str:
-    return "".join(c for c in cnpj if c.isdigit())
+    return "".join(c for c in (cnpj or "") if c.isdigit())
 
 
 def _consultar_cnpja(cnpj: str) -> dict:

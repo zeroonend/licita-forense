@@ -19,6 +19,8 @@ def investigar(caminho_pdf: str) -> dict:
     Pipeline completo de investigação.
     Retorna dict com grafo, alertas e laudo.
     """
+    warnings = []
+
     print(f"\n[1/5] Extraindo licitantes de {caminho_pdf}...")
     licitantes = extrair_licitantes(caminho_pdf)
     print(f"      → {len(licitantes['empresas'])} empresas encontradas")
@@ -26,11 +28,28 @@ def investigar(caminho_pdf: str) -> dict:
     print("\n[2/5] Consultando CNPJá para cada licitante...")
     dados_empresas = []
     for empresa in licitantes["empresas"]:
-        dados = consultar_cnpj(empresa["cnpj"])
+        cnpj = empresa.get("cnpj")
+        # Documentos de "resultado" muitas vezes trazem só o nome, sem CNPJ.
+        # Sem CNPJ não há como puxar o QSA — registra a empresa, avisa e segue.
+        if not "".join(c for c in (cnpj or "") if c.isdigit()):
+            aviso = f"Empresa '{empresa.get('razao_social', 'N/A')}' sem CNPJ no documento — enriquecimento e busca de sócios pulados."
+            warnings.append(aviso)
+            dados_empresas.append({
+                "cnpj": cnpj or "",
+                "razao_social": empresa.get("razao_social", ""),
+                "qsa": [],
+                "endereco": "",
+                "fonte": "sem_cnpj",
+                "lance": empresa.get("lance"),
+                "resultado": empresa.get("resultado"),
+            })
+            print(f"      → [sem CNPJ] {empresa.get('razao_social', 'N/A')}")
+            continue
+        dados = consultar_cnpj(cnpj)
         dados["lance"] = empresa.get("lance")
         dados["resultado"] = empresa.get("resultado")
         dados_empresas.append(dados)
-        print(f"      → {empresa['cnpj']} — {dados.get('razao_social', 'N/A')}")
+        print(f"      → {cnpj} — {dados.get('razao_social', 'N/A')}")
 
     print("\n[3/5] Investigando sócios (busca reversa)...")
     expansao_socios = investigar_socios(dados_empresas)
@@ -44,9 +63,11 @@ def investigar(caminho_pdf: str) -> dict:
     laudo = gerar_laudo(grafo, score, licitantes["meta"])
 
     return {
+        "meta": licitantes["meta"],
         "grafo": grafo,
         "score": score,
-        "laudo": laudo
+        "laudo": laudo,
+        "warnings": warnings
     }
 
 

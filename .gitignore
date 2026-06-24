@@ -2,6 +2,9 @@
 *.[Pp][Dd][Ff]
 laudos/
 dumps/
+exemple/
+# Resultados de investigação contêm nomes de sócios reais — não versionar.
+frontend/resultado-*.json
 __pycache__/
 *.pyc
 .DS_Store

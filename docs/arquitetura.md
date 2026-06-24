@@ -24,9 +24,17 @@ PDF upload → Extrator (Claude API) → CNPJs + lances
 
 ## Sinais de alerta (metodologia CADE)
 
+Implementados hoje (scoring 100% determinístico, sem LLM):
+
 - Sócio em comum entre licitantes (peso 35)
-- Mesmo endereço/telefone/email (peso 20)
-- CNPJs sequenciais ou abertura próxima (peso 15/10)
+- Rede externa compartilhada — empresa fora do edital que concentra sócios de
+  2+ licitantes via busca reversa (peso 25)
+- Mesmo endereço entre licitantes — normalização canônica (peso 20)
+- CNPJs sequenciais (peso 15)
+- Abertura próxima — constituição em datas próximas (peso 10)
+
+Previstos no roadmap, ainda **não implementados** (pesos reservados):
+
 - Mesmo contador assinando balanços (peso 10)
 - Lance de cobertura / valores redondos (peso 5)
 - Subcontratação do perdedor pelo vencedor (peso 5)

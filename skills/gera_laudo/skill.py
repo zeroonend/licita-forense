@@ -1,20 +1,16 @@
 """
 Skill: gera_laudo
-Síntese final via Claude API — gera laudo investigativo em texto.
+Síntese final via LLM (Anthropic → fallback Gemini) — gera laudo investigativo.
 """
-import os
 import json
-import anthropic
-from dotenv import load_dotenv
-load_dotenv()
+
+from llm import gerar_texto
 
 
 def gerar_laudo(grafo: dict, score: dict, meta: dict) -> str:
     """
     Gera laudo investigativo completo baseado no grafo e score.
     """
-    client = anthropic.Anthropic()
-
     contexto = json.dumps({
         "licitacao": meta,
         "empresas": [
@@ -52,10 +48,61 @@ Tom: técnico, objetivo, sem especulação além dos dados.
 Formato: texto corrido com seções numeradas.
 Não invente dados que não estão nos inputs."""
 
-    resposta = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    # Modo híbrido: LLM quando disponível; template determinístico como fallback.
+    try:
+        resposta = gerar_texto(prompt, max_tokens=3000)
+        print(f"      [laudo via {resposta.provider}/{resposta.model}]")
+        return resposta.text
+    except Exception as e:
+        print(f"      [LLM indisponível ({str(e)[:80]}...) — laudo via template determinístico]")
+        return _laudo_template(grafo, score, meta)
 
-    return resposta.content[0].text
+
+def _laudo_template(grafo: dict, score: dict, meta: dict) -> str:
+    """Laudo determinístico (sem LLM) montado diretamente dos dados."""
+    linhas = []
+    linhas.append("LAUDO INVESTIGATIVO (gerado por template determinístico — LLM indisponível)")
+    linhas.append("")
+    linhas.append(f"Licitação: {meta.get('numero','—')} | Órgão: {meta.get('orgao','—')}")
+    linhas.append(f"Objeto: {meta.get('objeto','—')}")
+    linhas.append(f"Data: {meta.get('data','—')}")
+    linhas.append("")
+    linhas.append("1. RESUMO EXECUTIVO")
+    linhas.append(
+        f"   Nível de risco: {score.get('nivel_risco','—')} "
+        f"(score {score.get('score_geral',0)}/100, bruto {score.get('score_bruto',0)}). "
+        f"{score.get('total_alertas',0)} alerta(s) detectado(s) sobre "
+        f"{len(grafo.get('empresas', []))} licitante(s)."
+    )
+    linhas.append("")
+    linhas.append("2. LICITANTES INVESTIGADOS")
+    for e in grafo.get("empresas", []):
+        linhas.append(
+            f"   - {e.get('razao_social','—')} (CNPJ {e.get('cnpj','—')}) | "
+            f"lance {e.get('lance','—')} | {e.get('resultado','—')} | "
+            f"{len(e.get('qsa', []))} sócio(s)"
+        )
+    linhas.append("")
+    linhas.append("3. VÍNCULOS / ALERTAS DETECTADOS")
+    if score.get("alertas"):
+        for a in score["alertas"]:
+            linhas.append(f"   - [{a['tipo']} +{a['peso']}] {a['descricao']}")
+    else:
+        linhas.append("   Nenhum vínculo suspeito detectado pelas regras atuais.")
+    linhas.append("")
+    linhas.append("4. CONCLUSÃO E RECOMENDAÇÃO")
+    nivel = score.get("nivel_risco", "BAIXO")
+    rec = {
+        "CRÍTICO": "Encaminhar para investigação formal (indícios fortes de conluio).",
+        "ALTO": "Encaminhar para investigação (indícios relevantes).",
+        "MÉDIO": "Monitorar e aprofundar com certidões da Junta Comercial.",
+        "BAIXO": "Arquivar, sem prejuízo de reanálise se surgirem novos dados.",
+    }.get(nivel, "Monitorar.")
+    linhas.append(f"   {rec}")
+    linhas.append("")
+    linhas.append("5. OBSERVAÇÕES SOBRE EVIDÊNCIAS")
+    linhas.append(
+        "   Vínculos via busca reversa baseiam-se em CPF mascarado da Receita; "
+        "confirmar com certidão da Junta Comercial (CPF completo, fé pública)."
+    )
+    return "\n".join(linhas)
