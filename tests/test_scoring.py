@@ -203,11 +203,12 @@ def test_mesmo_email_dominio_ignora_provedor_generico():
 
 def test_mesmo_dono_dominio():
     g = _grafo([
-        {"cnpj": "11111111000111", "dominio_dono": "99888777000166"},
-        {"cnpj": "22222222000122", "dominio_dono": "99888777000166"},
+        {"cnpj": "11111111000111", "dominio_dono": "997861", "dominio_dono_nome": "JOSE DOMINGOS"},
+        {"cnpj": "22222222000122", "dominio_dono": "997861"},
     ])
     a = [x for x in calcular_score(g)["alertas"] if x["tipo"] == "mesmo_dono_dominio"]
     assert a and a[0]["peso"] == PESOS["mesmo_dono_dominio"]
+    assert "JOSE DOMINGOS" in a[0]["descricao"]  # nome aparece no rótulo
     # sem enriquecimento (sem campo dominio_dono) → regra não dispara
     g2 = _grafo([{"cnpj": "11111111000111"}, {"cnpj": "22222222000122"}])
     assert "mesmo_dono_dominio" not in [x["tipo"] for x in calcular_score(g2)["alertas"]]

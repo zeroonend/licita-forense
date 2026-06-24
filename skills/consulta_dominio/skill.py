@@ -11,8 +11,12 @@ import cache
 RDAP_BASE = "https://rdap.registro.br"
 
 
-def consultar_dono_dominio(dominio: str) -> str:
-    """Retorna o identificador do titular (CNPJ/CPF/handle) ou None."""
+def consultar_dono_dominio(dominio: str) -> dict:
+    """
+    Retorna o titular do domínio como {"id", "nome"} ou None.
+    - id: CNPJ/CPF (mascarado p/ pessoa física por LGPD) normalizado, p/ agrupar.
+    - nome: nome do titular (quando disponível no RDAP).
+    """
     dominio = (dominio or "").strip().lower()
     if not dominio.endswith(".br"):
         return None  # registro.br cobre apenas .br
@@ -24,17 +28,31 @@ def consultar_dono_dominio(dominio: str) -> str:
     return _extrair_titular(data)
 
 
-def _extrair_titular(data: dict) -> str:
-    """Extrai o titular do RDAP: prioriza publicIds (CNPJ/CPF), senão handle."""
+def _extrair_titular(data: dict) -> dict:
+    """Extrai {id, nome} do titular: id de publicIds/handle, nome do vcard 'fn'."""
     for ent in (data or {}).get("entities", []) or []:
         roles = ent.get("roles") or []
         if "registrant" in roles or "owner" in roles:
+            ident = ""
             for pid in ent.get("publicIds") or []:
-                ident = pid.get("identifier")
-                if ident:
-                    return _norm(ident)
-            if ent.get("handle"):
-                return _norm(ent["handle"])
+                if pid.get("identifier"):
+                    ident = _norm(pid["identifier"])
+                    break
+            if not ident and ent.get("handle"):
+                ident = _norm(ent["handle"])
+            nome = _vcard_fn(ent)
+            if ident or nome:
+                return {"id": ident or None, "nome": nome or None}
+    return None
+
+
+def _vcard_fn(ent: dict) -> str:
+    """Extrai o nome completo ('fn') do vcardArray de uma entidade RDAP."""
+    va = ent.get("vcardArray")
+    if va and len(va) > 1:
+        for item in va[1]:
+            if item and item[0] == "fn":
+                return item[3]
     return None
 
 

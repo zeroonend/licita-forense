@@ -627,7 +627,8 @@
         linha(`Endereço: ${e.endereco || "—"}`);
         linha(`Telefone: ${e.telefone || "—"}`);
         linha(`E-mail: ${e.email || "—"}`);
-        if (e.dominio_dono) linha(`Titular do domínio: ${e.dominio_dono}`);
+        if (e.dominio_dono || e.dominio_dono_nome)
+          linha(`Titular do domínio: ${e.dominio_dono_nome || e.dominio_dono}`);
       } else if (d.tipo === "externa") {
         const e = d.dados;
         titulo(e.razao_social || e.cnpj);
