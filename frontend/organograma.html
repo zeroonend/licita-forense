@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Licita Forense — Organograma de Vínculos</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #1a1d27;
+      --border: #2a2e3a;
+      --text: #e4e6eb;
+      --muted: #8a8f9c;
+      --empresa: #4a90d9;
+      --socio: #d99a4a;
+      --vinculo: #e05252;
+      --critico: #e05252;
+      --alto: #e08a52;
+      --medio: #e0c452;
+      --baixo: #52c47a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #sidebar {
+      width: 340px;
+      min-width: 340px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 20px;
+      overflow-y: auto;
+    }
+    #sidebar h1 {
+      font-size: 18px;
+      margin: 0 0 4px 0;
+    }
+    #sidebar .sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
+    .score-badge {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 13px;
+      color: #0f1117;
+    }
+    .score-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .score-card .num {
+      font-size: 42px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .score-card .lbl {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .secao-titulo {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin: 18px 0 8px 0;
+    }
+    .alerta {
+      background: var(--bg);
+      border-left: 3px solid var(--vinculo);
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .alerta .tipo {
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      color: var(--vinculo);
+    }
+    .alerta .peso {
+      float: right;
+      color: var(--muted);
+    }
+    #upload-area {
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    #upload-area:hover { border-color: var(--empresa); color: var(--text); }
+    #graph { flex: 1; position: relative; }
+    svg { width: 100%; height: 100%; display: block; }
+    .link { stroke: var(--border); stroke-width: 1.5px; }
+    .link.suspeito { stroke: var(--vinculo); stroke-width: 2.5px; stroke-dasharray: 4 2; }
+    .node circle { stroke: var(--bg); stroke-width: 2px; cursor: pointer; }
+    .node text {
+      fill: var(--text);
+      font-size: 11px;
+      pointer-events: none;
+    }
+    .legenda {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+    }
+    .legenda .item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .legenda .dot { width: 12px; height: 12px; border-radius: 50%; }
+    #tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      max-width: 280px;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 10;
+    }
+    #tooltip .t-titulo { font-weight: 700; margin-bottom: 4px; }
+    #tooltip .t-linha { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <aside id="sidebar">
+    <h1>🔎 Licita Forense</h1>
+    <div class="sub">Organograma de vínculos societários</div>
+
+    <div id="upload-area">
+      Carregar resultado.json<br>
+      <small>(saída do orquestrador)</small>
+      <input type="file" id="file-input" accept=".json" style="display:none">
+    </div>
+
+    <div class="score-card">
+      <div class="lbl">Score de conluio</div>
+      <div class="num" id="score-num">—</div>
+      <div style="margin-top:10px"><span class="score-badge" id="score-badge">aguardando</span></div>
+    </div>
+
+    <div class="secao-titulo">Alertas detectados</div>
+    <div id="alertas-lista">
+      <div style="color:var(--muted);font-size:12px">Nenhum dado carregado.</div>
+    </div>
+  </aside>
+
+  <main id="graph">
+    <svg id="svg"></svg>
+    <div class="legenda">
+      <div class="item"><span class="dot" style="background:var(--empresa)"></span> Empresa licitante</div>
+      <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio</div>
+      <div class="item"><span class="dot" style="background:var(--vinculo)"></span> Vínculo suspeito</div>
+    </div>
+    <div id="tooltip"></div>
+  </main>
+
+  <script>
+    // ----------------------------------------------------------------
+    // Licita Forense — organograma interativo (D3 force-directed graph)
+    // Consome o JSON produzido por orquestrador/main.py: { grafo, score }
+    // ----------------------------------------------------------------
+
+    const CORES_NIVEL = {
+      "CRÍTICO": getCss("--critico"),
+      "ALTO": getCss("--alto"),
+      "MÉDIO": getCss("--medio"),
+      "BAIXO": getCss("--baixo"),
+    };
+
+    function getCss(v) {
+      return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    }
+
+    const svg = d3.select("#svg");
+    const tooltip = d3.select("#tooltip");
+    let simulation;
+
+    document.getElementById("upload-area").addEventListener("click", () =>
+      document.getElementById("file-input").click());
+
+    document.getElementById("file-input").addEventListener("change", (ev) => {
+      const file = ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const dados = JSON.parse(e.target.result);
+          render(dados);
+        } catch (err) {
+          alert("JSON inválido: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    function render(dados) {
+      const grafo = dados.grafo || dados;
+      const score = dados.score || {};
+
+      atualizarPainel(score);
+      desenharGrafo(grafo);
+    }
+
+    function atualizarPainel(score) {
+      document.getElementById("score-num").textContent = score.score_geral ?? "—";
+      const badge = document.getElementById("score-badge");
+      const nivel = score.nivel_risco || "—";
+      badge.textContent = nivel;
+      badge.style.background = CORES_NIVEL[nivel] || getCss("--muted");
+
+      const lista = document.getElementById("alertas-lista");
+      const alertas = score.alertas || [];
+      if (!alertas.length) {
+        lista.innerHTML = '<div style="color:var(--muted);font-size:12px">Nenhum alerta.</div>';
+        return;
+      }
+      lista.innerHTML = alertas.map(a => `
+        <div class="alerta">
+          <span class="tipo">${a.tipo}</span>
+          <span class="peso">+${a.peso}</span>
+          <div style="margin-top:6px">${a.descricao}</div>
+        </div>
+      `).join("");
+    }
+
+    function desenharGrafo(grafo) {
+      svg.selectAll("*").remove();
+      const width = document.getElementById("graph").clientWidth;
+      const height = document.getElementById("graph").clientHeight;
+
+      // Constrói nós e arestas a partir do grafo
+      const nodes = [];
+      const links = [];
+      const idxEmpresa = {};
+      const idxSocio = {};
+
+      (grafo.empresas || []).forEach(emp => {
+        const id = "emp:" + emp.cnpj;
+        idxEmpresa[emp.cnpj] = id;
+        nodes.push({
+          id, tipo: "empresa",
+          label: emp.razao_social || emp.cnpj,
+          dados: emp
+        });
+      });
+
+      (grafo.empresas || []).forEach(emp => {
+        (emp.qsa || []).forEach(s => {
+          const chave = (s.cpf_cnpj_socio || "") + "|" + (s.nome_socio || "").toUpperCase();
+          if (!idxSocio[chave]) {
+            const id = "soc:" + chave;
+            idxSocio[chave] = id;
+            nodes.push({
+              id, tipo: "socio",
+              label: s.nome_socio || "Sócio",
+              dados: s
+            });
+          }
+          links.push({
+            source: idxSocio[chave],
+            target: idxEmpresa[emp.cnpj],
+            suspeito: false
+          });
+        });
+      });
+
+      // Marca como suspeitos os vínculos de sócios em comum
+      const socioSuspeito = new Set(
+        (grafo.vinculos_suspeitos || []).map(v => (v.cpf || "") + "|" + (v.socio || "").toUpperCase())
+      );
+      links.forEach(l => {
+        const chave = l.source.replace("soc:", "");
+        if (socioSuspeito.has(chave)) l.suspeito = true;
+      });
+
+      simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(90))
+        .force("charge", d3.forceManyBody().strength(-320))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide(40));
+
+      const link = svg.append("g").selectAll("line")
+        .data(links).join("line")
+        .attr("class", d => "link" + (d.suspeito ? " suspeito" : ""));
+
+      const node = svg.append("g").selectAll("g")
+        .data(nodes).join("g")
+        .attr("class", "node")
+        .call(d3.drag()
+          .on("start", dragStart)
+          .on("drag", dragging)
+          .on("end", dragEnd));
+
+      node.append("circle")
+        .attr("r", d => d.tipo === "empresa" ? 16 : 10)
+        .attr("fill", d => d.tipo === "empresa" ? getCss("--empresa") : getCss("--socio"));
+
+      node.append("text")
+        .attr("x", 20).attr("y", 4)
+        .text(d => truncar(d.label, 28));
+
+      node.on("mouseover", (ev, d) => mostrarTooltip(ev, d))
+          .on("mousemove", (ev) => moverTooltip(ev))
+          .on("mouseout", esconderTooltip);
+
+      simulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+        node.attr("transform", d => `translate(${d.x},${d.y})`);
+      });
+
+      function dragStart(ev, d) {
+        if (!ev.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      }
+      function dragging(ev, d) { d.fx = ev.x; d.fy = ev.y; }
+      function dragEnd(ev, d) {
+        if (!ev.active) simulation.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      }
+    }
+
+    function mostrarTooltip(ev, d) {
+      let html = "";
+      if (d.tipo === "empresa") {
+        const e = d.dados;
+        html = `<div class="t-titulo">${e.razao_social || ""}</div>
+          <div class="t-linha">CNPJ: ${e.cnpj || "—"}</div>
+          <div class="t-linha">Situação: ${e.situacao || "—"}</div>
+          <div class="t-linha">Lance: ${e.lance || "—"} · ${e.resultado || "—"}</div>
+          <div class="t-linha">Abertura: ${e.data_abertura || "—"}</div>`;
+      } else {
+        const s = d.dados;
+        html = `<div class="t-titulo">${s.nome_socio || ""}</div>
+          <div class="t-linha">CPF/CNPJ: ${s.cpf_cnpj_socio || "—"}</div>
+          <div class="t-linha">Qualificação: ${s.qualificacao || "—"}</div>`;
+      }
+      tooltip.html(html).style("opacity", 1);
+      moverTooltip(ev);
+    }
+    function moverTooltip(ev) {
+      tooltip.style("left", (ev.pageX + 14) + "px").style("top", (ev.pageY + 14) + "px");
+    }
+    function esconderTooltip() { tooltip.style("opacity", 0); }
+
+    function truncar(s, n) { return s && s.length > n ? s.slice(0, n) + "…" : s; }
+
+    window.addEventListener("resize", () => {
+      if (simulation) {
+        const w = document.getElementById("graph").clientWidth;
+        const h = document.getElementById("graph").clientHeight;
+        simulation.force("center", d3.forceCenter(w / 2, h / 2)).alpha(0.3).restart();
+      }
+    });
+  </script>
+</body>
+</html>
