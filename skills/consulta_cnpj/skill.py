@@ -2,8 +2,12 @@
 Skill: consulta_cnpj
 Wrapper da CNPJá API — retorna dados completos da empresa + QSA.
 Fallback para BrasilAPI se CNPJá falhar.
+
+Roteamento por economia: empresas SCP (Sociedade em Conta de Participação)
+consultam primeiro a BrasilAPI (gratuita), economizando créditos da CNPJá.
 """
 import os
+import re
 import httpx
 from dotenv import load_dotenv
 load_dotenv()
@@ -12,13 +16,26 @@ CNPJA_KEY = os.getenv("CNPJA_API_KEY")
 CNPJA_BASE = "https://api.cnpja.com"
 BRASILAPI_BASE = "https://brasilapi.com.br/api/cnpj/v1"
 
+_RE_SCP = re.compile(r"\bSCP\b", re.IGNORECASE)
 
-def consultar_cnpj(cnpj: str) -> dict:
+
+def consultar_cnpj(cnpj: str, razao_social: str = None) -> dict:
     """
     Consulta dados de uma empresa pelo CNPJ.
-    Tenta CNPJá primeiro, fallback BrasilAPI.
+
+    Por padrão tenta CNPJá primeiro (QSA mais rico) e cai para BrasilAPI.
+    Se a razão social indicar SCP, inverte a ordem: BrasilAPI (grátis) primeiro,
+    CNPJá apenas como fallback — para não gastar crédito com esse tipo de empresa.
     """
     cnpj_limpo = _limpar_cnpj(cnpj)
+
+    if _e_scp(razao_social):
+        print("      [SCP detectada — priorizando BrasilAPI (grátis)]")
+        try:
+            return _consultar_brasilapi(cnpj_limpo)
+        except Exception as e:
+            print(f"      [BrasilAPI falhou para SCP: {e}] — tentando CNPJá...")
+            return _consultar_cnpja(cnpj_limpo)
 
     try:
         return _consultar_cnpja(cnpj_limpo)
@@ -27,8 +44,13 @@ def consultar_cnpj(cnpj: str) -> dict:
         return _consultar_brasilapi(cnpj_limpo)
 
 
+def _e_scp(razao_social: str) -> bool:
+    """True se a razão social contém o marcador 'SCP' como palavra isolada."""
+    return bool(_RE_SCP.search(razao_social or ""))
+
+
 def _limpar_cnpj(cnpj: str) -> str:
-    return "".join(c for c in cnpj if c.isdigit())
+    return "".join(c for c in (cnpj or "") if c.isdigit())
 
 
 def _consultar_cnpja(cnpj: str) -> dict:

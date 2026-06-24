@@ -2,12 +2,11 @@
 Extrator de documentos — usa Claude API para extrair
 estrutura de licitação de PDFs (ata, resultado, propostas).
 """
-import os
 import json
-import base64
 import warnings
-import anthropic
 import pdfplumber
+
+from llm import gerar_texto
 
 MAX_CHARS = 15_000
 
@@ -21,7 +20,7 @@ def extrair_licitantes(caminho_pdf: str) -> dict:
     }
     """
     texto = _extrair_texto_pdf(caminho_pdf)
-    return _extrair_com_claude(texto)
+    return _extrair_com_llm(texto)
 
 
 def _extrair_texto_pdf(caminho: str) -> str:
@@ -32,9 +31,7 @@ def _extrair_texto_pdf(caminho: str) -> str:
     return texto
 
 
-def _extrair_com_claude(texto: str) -> dict:
-    client = anthropic.Anthropic()
-
+def _extrair_com_llm(texto: str) -> dict:
     if len(texto) > MAX_CHARS:
         warnings.warn(
             f"PDF tem {len(texto)} caracteres; truncado em {MAX_CHARS}. "
@@ -73,13 +70,10 @@ Regras:
 - Inclua TODAS as empresas participantes, inclusive desclassificadas
 - Ordene pelo resultado (vencedor primeiro)"""
 
-    resposta = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    resposta = gerar_texto(prompt, max_tokens=2000)
+    print(f"      [extração via {resposta.provider}/{resposta.model}]")
 
-    texto_resposta = resposta.content[0].text.strip()
+    texto_resposta = resposta.text.strip()
     texto_resposta = _remover_cerca_markdown(texto_resposta)
     try:
         return json.loads(texto_resposta)

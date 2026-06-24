@@ -10,7 +10,7 @@ Pipeline determinístico (mesmo input → mesmo output, para valor probatório):
 1. Upload de documentos (edital, ata, resultado, propostas)
 2. Extração estruturada via Claude API → {cnpjs, lances, resultado}
 3. Investigação societária via CNPJá API (QSA, busca reversa de sócios)
-4. Scoring de conluio (regras CADE + ponderação LLM)
+4. Scoring de conluio (regras determinísticas CADE)
 5. Laudo gerado pelo Claude API
 6. Visualização em organograma interativo
 
@@ -18,7 +18,7 @@ Pipeline determinístico (mesmo input → mesmo output, para valor probatório):
 
 - `consulta_cnpj` — wrapper CNPJá: dados da empresa + QSA
 - `busca_reversa_socios` — dado sócio (nome + CPF 6 dígitos), retorna todas as empresas
-- `scoring_conluio` — regras determinísticas + LLM para ponderação
+- `scoring_conluio` — regras determinísticas (CADE); sem LLM, mesmo grafo → mesmo score
 - `gera_laudo` — síntese Claude API
 - `certidao_junta` — passo manual: certidão JUCEG para CPF completo nos licitantes do edital
 
