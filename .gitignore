@@ -13,3 +13,7 @@ venv/
 *.egg-info/
 .idea/
 .vscode/
+
+# Banco SQLite (dados reais de investigação)
+dados/
+*.db

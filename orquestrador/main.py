@@ -25,13 +25,18 @@ from skills.gera_laudo.skill import gerar_laudo, LAUDO_PROMPT_VERSION
 from skills.laudo_pdf.skill import gerar_pdf
 from llm import reset_telemetria, telemetria
 import cache
+import db
+
+# Empresa cacheada há mais de N dias é reconsultada (equilíbrio crédito × frescor).
+CACHE_MAX_IDADE_DIAS = 90
 
 SCHEMA_VERSION = "investigation_result.v1"
 
 
 def investigar(caminho_pdf: str, aprofundar: bool = False,
                limite_aprofundamento: int = 30, persistir: bool = True,
-               gravar_cache: bool = False, replay_store: dict = None) -> dict:
+               gravar_cache: bool = False, replay_store: dict = None,
+               usar_banco: bool = False) -> dict:
     """
     Pipeline completo de investigação.
     Retorna um artefato `investigation_result.v1` (schema versionado, com
@@ -46,6 +51,10 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
         para permitir replay determinístico depois.
     replay_store: se fornecido, roda em modo replay (nenhuma chamada externa
         nova; respostas vêm deste store).
+    usar_banco: se True, usa o SQLite como cache persistente de consultas
+        (economia de crédito entre execuções) e indexa a execução para
+        cruzamento entre editais. Desligado nos modos record/replay para não
+        interferir na captura/reprodução determinística da trilha.
     """
     reset_telemetria()
     if replay_store is not None:
@@ -54,6 +63,9 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
         cache.configurar("record")
     else:
         cache.configurar("off")
+    # O cache de banco só atua no modo "off": em record perderíamos a chamada na
+    # trilha; em replay a resposta tem de vir do store gravado.
+    conn = db.conectar() if (usar_banco and replay_store is None and not gravar_cache) else None
     warnings = []
     execucao_id = str(uuid.uuid4())
     started_at = _agora()
@@ -83,14 +95,15 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
             })
             print(f"      → [sem CNPJ] {empresa.get('razao_social', 'N/A')}")
             continue
-        dados = consultar_cnpj(cnpj, razao_social=empresa.get("razao_social"))
+        dados, do_cache = _cnpj_com_cache(conn, cnpj, empresa.get("razao_social"))
         dados["lance"] = empresa.get("lance")
         dados["resultado"] = empresa.get("resultado")
         dados_empresas.append(dados)
-        print(f"      → {cnpj} — {dados.get('razao_social', 'N/A')}")
+        print(f"      → {cnpj} — {dados.get('razao_social', 'N/A')}"
+              + (" [cache]" if do_cache else ""))
 
     print("\n[2.5] Enriquecendo domínios de e-mail (registro.br)...")
-    _enriquecer_dominios(dados_empresas)
+    _enriquecer_dominios(dados_empresas, conn)
 
     print("\n[3/5] Investigando sócios (busca reversa)...")
     expansao_socios = investigar_socios(dados_empresas)
@@ -98,7 +111,7 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
 
     if aprofundar:
         print("\n[3.5] Aprofundando rede externa (SCPs via BrasilAPI grátis)...")
-        grafo["aprofundamento"] = aprofundar_rede(grafo, limite=limite_aprofundamento)
+        grafo["aprofundamento"] = aprofundar_rede(grafo, limite=limite_aprofundamento, conn=conn)
 
     print("\n[4/5] Calculando score de conluio...")
     score = calcular_score(grafo)
@@ -162,7 +175,28 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
         artefato["execution"]["artifact_path"] = _persistir_artefato(artefato)
         print(f"      [artefato salvo: {artefato['execution']['artifact_path']}]")
 
+    if conn is not None:
+        db.registrar_execucao(conn, artefato)
+        print("      [execução indexada no banco para cruzamento entre editais]")
+        conn.close()
+
     return artefato
+
+
+def _cnpj_com_cache(conn, cnpj: str, razao_social: str):
+    """
+    Consulta a empresa usando o banco como cache persistente quando disponível.
+    Retorna (dados, veio_do_cache). Dados de empresa são fatos estáveis; lance e
+    resultado (específicos do edital) são anexados pelo chamador, fora do cache.
+    """
+    if conn is not None:
+        cacheado = db.empresa_cacheada(conn, cnpj, CACHE_MAX_IDADE_DIAS)
+        if cacheado is not None:
+            return dict(cacheado), True
+    dados = consultar_cnpj(cnpj, razao_social=razao_social)
+    if conn is not None:
+        db.salvar_empresa(conn, cnpj, dados)
+    return dados, False
 
 
 def reexecutar_replay(caminho_artefato: str, caminho_pdf: str,
@@ -240,11 +274,12 @@ def investigar_socios(dados_empresas: list) -> dict:
     return expansao
 
 
-def _enriquecer_dominios(dados_empresas: list) -> None:
+def _enriquecer_dominios(dados_empresas: list, conn=None) -> None:
     """
     Anexa a cada empresa o domínio do e-mail e o titular do domínio (registro.br),
     para as regras mesmo_email_dominio e mesmo_dono_dominio. Ignora provedores
     genéricos; consulta cada domínio uma única vez. Mutação in-place.
+    Usa o banco como cache persistente do titular quando `conn` é fornecido.
     """
     donos = {}  # domínio → titular (memoização por execução)
     for emp in dados_empresas:
@@ -253,7 +288,13 @@ def _enriquecer_dominios(dados_empresas: list) -> None:
             continue
         emp["email_dominio"] = dom
         if dom not in donos:
-            donos[dom] = consultar_dono_dominio(dom)
+            cacheado = db.dominio_cacheado(conn, dom, CACHE_MAX_IDADE_DIAS) if conn else None
+            if cacheado is not None:
+                donos[dom] = cacheado if (cacheado.get("id") or cacheado.get("nome")) else None
+            else:
+                donos[dom] = consultar_dono_dominio(dom)
+                if conn is not None:
+                    db.salvar_dominio(conn, dom, donos[dom] or {})
             d = donos[dom] or {}
             print(f"      → {dom}: titular {d.get('nome') or d.get('id') or '—'}")
         dono = donos[dom]
@@ -317,7 +358,7 @@ def _cnpj_matriz(raiz: str) -> str:
     return base + d1 + d2
 
 
-def aprofundar_rede(grafo: dict, limite: int = 30, apenas_scp: bool = True) -> dict:
+def aprofundar_rede(grafo: dict, limite: int = 30, apenas_scp: bool = True, conn=None) -> dict:
     """
     2º nível de investigação: consulta o QSA das empresas externas encontradas
     na busca reversa. SCPs são roteadas para a BrasilAPI (grátis); as demais
@@ -347,17 +388,19 @@ def aprofundar_rede(grafo: dict, limite: int = 30, apenas_scp: bool = True) -> d
     print(f"      → aprofundando {len(itens)} externa(s)" + (" (apenas SCP)" if apenas_scp else ""))
 
     aprofundamento = {}
-    n_free = n_cnpja = 0
+    n_free = n_cnpja = n_cache = 0
     for raiz, nome in itens:
         cnpj = _cnpj_matriz(raiz)
         if not cnpj:
             continue
         try:
-            d = consultar_cnpj(cnpj, razao_social=nome)
+            d, do_cache = _cnpj_com_cache(conn, cnpj, nome)
         except Exception as ex:
             print(f"        [falha ao aprofundar {raiz} {nome[:30]}: {ex}]")
             continue
-        if d.get("fonte") == "brasilapi":
+        if do_cache:
+            n_cache += 1
+        elif d.get("fonte") == "brasilapi":
             n_free += 1
         else:
             n_cnpja += 1
@@ -367,7 +410,8 @@ def aprofundar_rede(grafo: dict, limite: int = 30, apenas_scp: bool = True) -> d
             "fonte": d.get("fonte"),
             "raiz": raiz,
         }
-    print(f"      → aprofundamento: {n_free} via BrasilAPI (grátis), {n_cnpja} via CNPJá (crédito)")
+    print(f"      → aprofundamento: {n_cache} do cache (banco), "
+          f"{n_free} via BrasilAPI (grátis), {n_cnpja} via CNPJá (crédito)")
     return aprofundamento
 
 
@@ -378,11 +422,13 @@ if __name__ == "__main__":
     frontend = "--frontend" in sys.argv
     gravar_cache = "--gravar-cache" in sys.argv
     pdf = "--pdf" in sys.argv
+    usar_banco = "--banco" in sys.argv
     if not args:
         print("Uso: python orquestrador/main.py <caminho_do_pdf> "
-              "[--aprofundar] [--frontend] [--gravar-cache] [--pdf]")
+              "[--aprofundar] [--frontend] [--gravar-cache] [--pdf] [--banco]")
         sys.exit(1)
-    resultado = investigar(args[0], aprofundar=aprofundar, gravar_cache=gravar_cache)
+    resultado = investigar(args[0], aprofundar=aprofundar, gravar_cache=gravar_cache,
+                           usar_banco=usar_banco)
     ex = resultado["execution"]
     print(f"\n=== EXECUÇÃO {ex['id']} ({ex['status']}) ===")
     print(f"PDF sha256: {ex['input_pdf_sha256'][:16]}... | extrator: {ex['components']['extractor_model']}"
