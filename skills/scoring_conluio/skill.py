@@ -12,6 +12,7 @@ JANELA_ABERTURA_DIAS = 90  # aberturas dentro desta janela são consideradas pr�
 PESOS = {
     "socio_em_comum": 35,
     "rede_externa_compartilhada": 25,
+    "ponte_externa_aprofundada": 20,
     "mesmo_endereco": 20,
     "cnpj_sequencial": 15,
     "abertura_proxima": 10,
@@ -147,6 +148,62 @@ def calcular_score(grafo: dict) -> dict:
                 "empresas": [datas[i][1], datas[i + 1][1]]
             })
             score += PESOS["abertura_proxima"]
+
+    # Regra 6: Ponte via aprofundamento — sócio (pessoa/empresa) que aparece em
+    # empresas externas aprofundadas (ex.: SCPs) ligadas a 2+ licitantes distintos.
+    # Capta vínculo oculto de 2º nível (ex.: mesma pessoa em SCPs de licitantes
+    # diferentes). Só roda quando o aprofundamento foi executado.
+    aprof = grafo.get("aprofundamento", {})
+    if aprof:
+        cnpjs_lic = {_so_digitos(e.get("cnpj", "")): e.get("razao_social", "") for e in empresas}
+        socios_lic = {}
+        for e in empresas:
+            for s in e.get("qsa", []):
+                nm = (s.get("nome_socio", "") or "").upper()
+                if nm:
+                    socios_lic[nm] = e.get("razao_social", "")
+
+        def _assoc_licitantes(qsa):
+            lic = set()
+            for s in qsa:
+                doc = _so_digitos(s.get("cpf_cnpj_socio", ""))
+                nm = (s.get("nome_socio", "") or "").upper()
+                if doc and doc in cnpjs_lic:
+                    lic.add(cnpjs_lic[doc])
+                elif nm and nm in socios_lic:
+                    lic.add(socios_lic[nm])
+            return lic
+
+        pontes = {}
+        for info in aprof.values():
+            qsa = info.get("qsa", [])
+            lic = _assoc_licitantes(qsa)
+            if not lic:
+                continue
+            for s in qsa:
+                doc = _so_digitos(s.get("cpf_cnpj_socio", ""))
+                nm = (s.get("nome_socio", "") or "").upper()
+                if doc and doc in cnpjs_lic:
+                    continue  # o próprio licitante não é "sócio-ponte"
+                if not nm and not doc:
+                    continue
+                chave = doc if len(doc) >= 8 else ("N:" + nm)
+                reg = pontes.setdefault(chave, {"nome": nm or doc, "licitantes": set(), "externas": set()})
+                reg["licitantes"] |= lic
+                reg["externas"].add(info.get("razao_social", ""))
+        for reg in pontes.values():
+            if len(reg["licitantes"]) >= 2:
+                alertas.append({
+                    "tipo": "ponte_externa_aprofundada",
+                    "peso": PESOS["ponte_externa_aprofundada"],
+                    "descricao": (
+                        f"'{reg['nome']}' conecta {len(reg['licitantes'])} licitantes "
+                        f"via empresas externas aprofundadas (SCPs): "
+                        f"{', '.join(sorted(reg['externas'])[:4])}"
+                    ),
+                    "empresas": sorted(reg["licitantes"]),
+                })
+                score += PESOS["ponte_externa_aprofundada"]
 
     # Classificação usa o score bruto (aditivo); score_geral é normalizado a 0–100
     # para exibição, mas score_bruto preserva o valor real para auditoria.
