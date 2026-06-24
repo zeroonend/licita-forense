@@ -302,15 +302,15 @@
       desenharGrafo(grafo);
     }
 
-    // Auto-carregamento opcional: ?data=arquivo.json busca e renderiza direto,
-    // sem upload manual (útil para servir a saída do orquestrador via HTTP).
+    // Auto-carregamento: ?data=arquivo.json (explícito) ou, por padrão,
+    // resultado-ultimo.json — o artefato exportado por `main.py --frontend`.
+    // Sem ?data, falha em silêncio (mantém a tela de upload) se não existir.
     const paramData = new URLSearchParams(location.search).get("data");
-    if (paramData) {
-      fetch(paramData)
-        .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-        .then(render)
-        .catch(err => alert("Falha ao carregar " + paramData + ": " + err.message));
-    }
+    const alvoData = paramData || "resultado-ultimo.json";
+    fetch(alvoData)
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(render)
+      .catch(err => { if (paramData) alert("Falha ao carregar " + paramData + ": " + err.message); });
 
     function atualizarPainel(score) {
       document.getElementById("score-num").textContent = score.score_geral ?? "—";
