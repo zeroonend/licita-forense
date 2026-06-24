@@ -8,9 +8,10 @@ O CPF mascarado da Receita (6 dígitos centrais visíveis) é usado para
 desambiguar homônimos sem precisar do CPF completo.
 """
 import os
-import httpx
 from dotenv import load_dotenv
 load_dotenv()
+
+import cache
 
 CNPJA_KEY = os.getenv("CNPJA_API_KEY")
 CNPJA_BASE = "https://api.cnpja.com"
@@ -31,9 +32,7 @@ def buscar_empresas_do_socio(nome: str, cpf_parcial: str = None) -> list:
     params = {"name.in": nome}
 
     try:
-        r = httpx.get(f"{CNPJA_BASE}/person", headers=headers, params=params, timeout=15)
-        r.raise_for_status()
-        data = r.json()
+        data, _ = cache.http_get(f"{CNPJA_BASE}/person", headers=headers, params=params)
     except Exception as e:
         print(f"      [busca reversa falhou para {nome}: {e}]")
         return []

@@ -22,12 +22,14 @@ from skills.busca_reversa_socios.skill import buscar_empresas_do_socio
 from skills.scoring_conluio.skill import calcular_score
 from skills.gera_laudo.skill import gerar_laudo, LAUDO_PROMPT_VERSION
 from llm import reset_telemetria, telemetria
+import cache
 
 SCHEMA_VERSION = "investigation_result.v1"
 
 
 def investigar(caminho_pdf: str, aprofundar: bool = False,
-               limite_aprofundamento: int = 30, persistir: bool = True) -> dict:
+               limite_aprofundamento: int = 30, persistir: bool = True,
+               gravar_cache: bool = False, replay_store: dict = None) -> dict:
     """
     Pipeline completo de investigação.
     Retorna um artefato `investigation_result.v1` (schema versionado, com
@@ -38,8 +40,18 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
         faz dezenas de chamadas adicionais.
     limite_aprofundamento: teto de empresas externas a aprofundar.
     persistir: se True, grava o artefato em execucoes/<id>.json.
+    gravar_cache: se True, grava no artefato o store de chamadas (cache_store)
+        para permitir replay determinístico depois.
+    replay_store: se fornecido, roda em modo replay (nenhuma chamada externa
+        nova; respostas vêm deste store).
     """
     reset_telemetria()
+    if replay_store is not None:
+        cache.configurar("replay", store=replay_store)
+    elif gravar_cache:
+        cache.configurar("record")
+    else:
+        cache.configurar("off")
     warnings = []
     execucao_id = str(uuid.uuid4())
     started_at = _agora()
@@ -110,7 +122,9 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
                 "extractor_max_chars": MAX_CHARS,
                 "aprofundar": aprofundar,
                 "limite_aprofundamento": limite_aprofundamento,
+                "replay": replay_store is not None,
             },
+            "external_calls": cache.registros(),
             "components": {
                 "extractor_model": call_extr["model"] if call_extr else None,
                 "laudo_model": call_laudo["model"] if call_laudo else None,
@@ -135,11 +149,31 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
         "warnings": warnings,
     }
 
+    # Em modo record, anexa o store de chamadas para permitir replay posterior.
+    if gravar_cache:
+        artefato["cache_store"] = cache.store()
+
     if persistir:
         artefato["execution"]["artifact_path"] = _persistir_artefato(artefato)
         print(f"      [artefato salvo: {artefato['execution']['artifact_path']}]")
 
     return artefato
+
+
+def reexecutar_replay(caminho_artefato: str, caminho_pdf: str,
+                      aprofundar: bool = False, persistir: bool = False) -> dict:
+    """
+    Reexecuta uma investigação em modo replay a partir de um artefato gravado
+    com `gravar_cache=True` — nenhuma chamada externa nova ocorre. Útil para
+    reproduzir um laudo de forma determinística (valor probatório).
+    """
+    with open(caminho_artefato, encoding="utf-8") as f:
+        artefato = json.load(f)
+    store = artefato.get("cache_store")
+    if not store:
+        raise ValueError("Artefato não contém cache_store (grave com gravar_cache=True).")
+    return investigar(caminho_pdf, aprofundar=aprofundar, persistir=persistir,
+                      replay_store=store)
 
 
 def _agora() -> str:
@@ -314,10 +348,11 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     aprofundar = "--aprofundar" in sys.argv
     frontend = "--frontend" in sys.argv
+    gravar_cache = "--gravar-cache" in sys.argv
     if not args:
-        print("Uso: python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend]")
+        print("Uso: python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend] [--gravar-cache]")
         sys.exit(1)
-    resultado = investigar(args[0], aprofundar=aprofundar)
+    resultado = investigar(args[0], aprofundar=aprofundar, gravar_cache=gravar_cache)
     ex = resultado["execution"]
     print(f"\n=== EXECUÇÃO {ex['id']} ({ex['status']}) ===")
     print(f"PDF sha256: {ex['input_pdf_sha256'][:16]}... | extrator: {ex['components']['extractor_model']}"

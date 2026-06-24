@@ -16,6 +16,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+import cache
+
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 # Modelo pinado (não alias "latest") para reprodutibilidade. O tier grátis do
 # Gemini varia a quota por modelo; 3.1-flash-lite tem quota gratuita estável.
@@ -54,21 +56,37 @@ def gerar_texto(prompt: str, max_tokens: int = 2000, temperature: float = 0,
 
     purpose: rótulo da finalidade ('extracao', 'laudo'...) registrado na
     telemetria para a trilha auditável.
-    """
-    erros = []
 
+    Passa pela camada de cache: em modo replay, nenhuma chamada nova ao LLM
+    ocorre (a resposta vem do store gravado).
+    """
+    def _chamar():
+        res = _chamar_provedores(prompt, max_tokens, temperature)
+        return {"text": res.text, "provider": res.provider, "model": res.model}
+
+    d = cache.executar(
+        "llm",
+        {"purpose": purpose, "prompt": prompt, "max_tokens": max_tokens, "temperature": temperature},
+        _chamar,
+        rotulo=f"llm:{purpose}",
+    )
+    res = LLMResult(d["text"], d["provider"], d["model"])
+    return _registrar(res, purpose, max_tokens)
+
+
+def _chamar_provedores(prompt: str, max_tokens: int, temperature: float) -> LLMResult:
+    """Tenta os provedores em ordem (Anthropic → Gemini); levanta se todos falharem."""
+    erros = []
     if os.getenv("ANTHROPIC_API_KEY"):
         try:
-            return _registrar(_anthropic(prompt, max_tokens, temperature), purpose, max_tokens)
+            return _anthropic(prompt, max_tokens, temperature)
         except Exception as e:
             erros.append(f"anthropic: {type(e).__name__}: {str(e)[:140]}")
-
     if os.getenv("GEMINI_API_KEY"):
         try:
-            return _registrar(_gemini(prompt, max_tokens, temperature), purpose, max_tokens)
+            return _gemini(prompt, max_tokens, temperature)
         except Exception as e:
             erros.append(f"gemini: {type(e).__name__}: {str(e)[:140]}")
-
     if erros:
         raise RuntimeError("Todos os provedores LLM falharam. " + " | ".join(erros))
     raise RuntimeError(
