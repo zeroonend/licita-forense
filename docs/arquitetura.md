@@ -54,9 +54,9 @@ Implementados hoje (scoring 100% determinístico, sem LLM):
   2+ licitantes; só com `aprofundar=True` (peso 20)
 - CNPJs sequenciais (peso 15)
 - Abertura próxima — constituição em datas próximas (peso 10)
+- Lance de cobertura (lances quase idênticos) / valores redondos (peso 5)
 
 Previstos no roadmap, ainda **não implementados** (pesos reservados):
 
 - Mesmo contador assinando balanços (peso 10)
-- Lance de cobertura / valores redondos (peso 5)
 - Subcontratação do perdedor pelo vencedor (peso 5)

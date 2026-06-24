@@ -3,11 +3,14 @@ Skill: scoring_conluio
 Regras determinísticas baseadas na metodologia do CADE.
 Totalmente determinístico: mesmo grafo → mesmo score (sem LLM).
 """
+import re
 import unicodedata
 from datetime import datetime
 
-RULESET_VERSION = "scoring_conluio.v2"  # 6 regras (inclui rede externa, ponte, abertura)
-JANELA_ABERTURA_DIAS = 90  # aberturas dentro desta janela são consideradas próximas
+RULESET_VERSION = "scoring_conluio.v3"  # 7 regras (inclui lance redondo/cobertura)
+JANELA_ABERTURA_DIAS = 90    # aberturas dentro desta janela são consideradas próximas
+LIMIAR_COBERTURA = 0.005     # lances com diferença relativa <= 0.5% → lance de cobertura
+PASSO_REDONDO = 1000         # valor "redondo" = múltiplo de R$ 1.000 sem centavos
 
 
 PESOS = {
@@ -206,6 +209,46 @@ def calcular_score(grafo: dict) -> dict:
                 })
                 score += PESOS["ponte_externa_aprofundada"]
 
+    # Regra 7: Lance de cobertura / valores redondos.
+    # - Cobertura: dois lances quase idênticos (diferença relativa <= 0,5%)
+    #   sugerem proposta "de cobertura" combinada.
+    # - Redondos: dois ou mais lances em valores redondos (múltiplos de R$1.000
+    #   sem centavos) é um padrão atípico para propostas reais.
+    lances = []
+    for emp in empresas:
+        v = _parse_valor(emp.get("lance"))
+        if v and v > 0:
+            lances.append((v, emp.get("cnpj", "")))
+
+    lances_ord = sorted(lances, key=lambda x: x[0])
+    for i in range(len(lances_ord) - 1):
+        a, ca = lances_ord[i]
+        b, cb = lances_ord[i + 1]
+        if abs(a - b) / max(a, b) <= LIMIAR_COBERTURA:
+            alertas.append({
+                "tipo": "lance_cobertura",
+                "peso": PESOS["lance_redondo"],
+                "descricao": (
+                    f"Lances quase idênticos (dif. {abs(a-b)/max(a,b)*100:.2f}%): "
+                    f"{ca} (R$ {a:,.2f}) e {cb} (R$ {b:,.2f})"
+                ),
+                "empresas": [ca, cb],
+            })
+            score += PESOS["lance_redondo"]
+
+    redondos = [(v, c) for v, c in lances if v == int(v) and int(v) % PASSO_REDONDO == 0]
+    if len(redondos) >= 2:
+        alertas.append({
+            "tipo": "lance_redondo",
+            "peso": PESOS["lance_redondo"],
+            "descricao": (
+                "Múltiplos lances em valores redondos (múltiplos de "
+                f"R$ {PASSO_REDONDO:,}): " + ", ".join(f"{c} (R$ {v:,.2f})" for v, c in redondos)
+            ),
+            "empresas": [c for _, c in redondos],
+        })
+        score += PESOS["lance_redondo"]
+
     # Classificação usa o score bruto (aditivo); score_geral é normalizado a 0–100
     # para exibição, mas score_bruto preserva o valor real para auditoria.
     nivel = _classificar_nivel(score)
@@ -233,6 +276,25 @@ def _normalizar_endereco(valor: str) -> str:
     s = unicodedata.normalize("NFKD", valor or "").encode("ascii", "ignore").decode()
     s = "".join(ch if ch.isalnum() else " " for ch in s.upper())
     return " ".join(s.split())
+
+
+def _parse_valor(valor) -> float:
+    """
+    Converte um lance em float. Aceita formato BR ('R$ 1.234.567,89') e número.
+    Retorna None se não houver valor numérico reconhecível.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    s = re.sub(r"[^0-9,\.]", "", str(valor))
+    if not s:
+        return None
+    s = s.replace(".", "").replace(",", ".")  # BR: . milhar, , decimal
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 
 def _parse_data(valor: str):
