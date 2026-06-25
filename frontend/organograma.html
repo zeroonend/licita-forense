@@ -138,7 +138,7 @@
     .link { stroke: var(--border); stroke-width: 1.5px; }
     .link.suspeito { stroke: var(--vinculo); stroke-width: 2.5px; stroke-dasharray: 4 2; }
     .node circle { stroke: var(--bg); stroke-width: 2px; cursor: pointer; }
-    .cruz-admin { stroke: #fff; stroke-width: 2px; pointer-events: none; }
+    .cruz-admin { stroke: #000; stroke-width: 2px; pointer-events: none; }
     .node text {
       fill: var(--text);
       font-size: 11px;
@@ -198,6 +198,9 @@
     <div id="alertas-lista">
       <div style="color:var(--muted);font-size:12px">Nenhum dado carregado.</div>
     </div>
+
+    <div class="secao-titulo" id="dominios-titulo" style="display:none">Domínios dos licitantes</div>
+    <div id="dominios-lista"></div>
   </aside>
 
   <main id="graph">
@@ -317,7 +320,52 @@
       });
 
       atualizarPainel(score, nomePorCnpj);
+      atualizarDominios(grafo.empresas || []);
       desenharGrafo(grafo);
+    }
+
+    // Mostra o domínio de e-mail e o titular (registro.br) de cada licitante,
+    // sempre — não só quando há coincidência. A regra mesmo_dono_dominio só
+    // alerta quando 2+ licitantes compartilham; aqui a investigação fica visível
+    // mesmo sem coincidência (e destaca titulares repetidos entre licitantes).
+    function atualizarDominios(empresas) {
+      const lista = document.getElementById("dominios-lista");
+      const titulo = document.getElementById("dominios-titulo");
+      lista.textContent = "";
+      const comDominio = empresas.filter(e => e.email_dominio || e.dominio_dono || e.dominio_dono_nome);
+      titulo.style.display = comDominio.length ? "" : "none";
+      if (!comDominio.length) return;
+
+      // Conta titulares para destacar quem se repete entre licitantes.
+      const contagem = {};
+      comDominio.forEach(e => {
+        const dono = e.dominio_dono_nome || e.dominio_dono;
+        if (dono) contagem[dono] = (contagem[dono] || 0) + 1;
+      });
+
+      comDominio.forEach(e => {
+        const div = document.createElement("div");
+        div.className = "alerta";
+        const nome = document.createElement("div");
+        nome.style.cssText = "font-weight:600;font-size:12px";
+        nome.textContent = e.razao_social || e.cnpj || "—";
+        div.appendChild(nome);
+        const dom = document.createElement("div");
+        dom.style.cssText = "color:var(--muted);font-size:11px;margin-top:4px";
+        dom.textContent = "Domínio: " + (e.email_dominio || "—");
+        div.appendChild(dom);
+        const dono = e.dominio_dono_nome || e.dominio_dono;
+        if (dono) {
+          const t = document.createElement("div");
+          const repetido = contagem[dono] > 1;
+          t.style.cssText = "font-size:11px;margin-top:2px;color:"
+            + (repetido ? "var(--vinculo)" : "var(--muted)");
+          t.textContent = (repetido ? "⚠ " : "") + "Titular: " + dono
+            + (repetido ? ` (em ${contagem[dono]} licitantes)` : "");
+          div.appendChild(t);
+        }
+        lista.appendChild(div);
+      });
     }
 
     // Auto-carregamento: ?data=arquivo.json (explícito) ou, por padrão,
