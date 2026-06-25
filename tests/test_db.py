@@ -86,8 +86,22 @@ def test_recorrentes():
     conn = _conn()
     db.registrar_execucao(conn, _artefato(eid="ex-1", edital="020/2026"))
     db.registrar_execucao(conn, _artefato(eid="ex-2", edital="031/2026"))
-    rec = db.recorrentes(conn, min_editais=2)
+    rec = db.recorrentes(conn, min_ocorrencias=2)
     chaves = {r["chave"] for r in rec}
-    assert "22008248000131" in chaves      # empresa em 2 editais
-    assert "***909901**" in chaves         # sócio em 2 editais
-    assert all(r["n_editais"] >= 2 for r in rec)
+    assert "22008248000131" in chaves      # empresa em 2 execuções
+    assert "***909901**" in chaves         # sócio em 2 execuções
+    assert all(r["n_execucoes"] >= 2 for r in rec)
+    assert all(r["n_editais"] >= 2 for r in rec)   # aqui os editais têm número
+
+
+def test_recorrentes_robusto_a_edital_nulo():
+    # Mesmo sem número de edital extraído (None), reincidência entre execuções
+    # distintas deve aparecer — antes COUNT(DISTINCT edital) ignorava NULL.
+    conn = _conn()
+    db.registrar_execucao(conn, _artefato(eid="ex-1", edital=None))
+    db.registrar_execucao(conn, _artefato(eid="ex-2", edital=None))
+    rec = db.recorrentes(conn, min_ocorrencias=2)
+    porchave = {r["chave"]: r for r in rec}
+    assert "22008248000131" in porchave
+    assert porchave["22008248000131"]["n_execucoes"] == 2
+    assert porchave["22008248000131"]["n_editais"] == 0   # nenhum edital nomeado
