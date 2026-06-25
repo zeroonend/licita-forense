@@ -228,19 +228,26 @@ def execucao(conn, eid: str) -> dict:
     return dict(row) if row else None
 
 
-def recorrentes(conn, min_editais: int = 2) -> list:
+def recorrentes(conn, min_ocorrencias: int = 2) -> list:
     """
-    Sócios/empresas que aparecem em >= min_editais editais distintos — os elos
-    que reaparecem entre licitações (sinal forte para cartel sistêmico).
+    Sócios/empresas que reaparecem em >= min_ocorrencias execuções distintas — os
+    elos que se repetem entre licitações (sinal forte para cartel sistêmico).
+
+    Conta execuções (não editais) de propósito: o número do edital às vezes não é
+    extraído do PDF (fica nulo) e, como SQL ignora NULL em COUNT(DISTINCT), contar
+    editais escondia recorrências reais (falso negativo). Reportamos os dois:
+    n_execucoes (base do limite) e n_editais (editais nomeados distintos).
     """
     rows = conn.execute(
         "SELECT papel, COALESCE(cnpj, doc) AS chave, "
-        "       MAX(nome) AS nome, COUNT(DISTINCT edital_numero) AS n_editais "
+        "       MAX(nome) AS nome, "
+        "       COUNT(DISTINCT execucao_id) AS n_execucoes, "
+        "       COUNT(DISTINCT edital_numero) AS n_editais "
         "FROM participacoes "
         "WHERE COALESCE(cnpj, doc) IS NOT NULL AND COALESCE(cnpj, doc) != '' "
-        "GROUP BY papel, chave HAVING n_editais >= ? "
-        "ORDER BY n_editais DESC",
-        (min_editais,),
+        "GROUP BY papel, chave HAVING n_execucoes >= ? "
+        "ORDER BY n_execucoes DESC",
+        (min_ocorrencias,),
     ).fetchall()
     return [dict(r) for r in rows]
 

@@ -141,7 +141,7 @@ async def laudo_pdf(eid: str):
 async def cruzamento(min: int = 2):
     conn = db.conectar()
     try:
-        return db.recorrentes(conn, min_editais=min)
+        return db.recorrentes(conn, min_ocorrencias=min)
     finally:
         conn.close()
 

@@ -95,7 +95,7 @@
         <button class="ghost" id="recarregar-cruz">Atualizar</button>
       </div>
       <table id="tab-cruz">
-        <thead><tr><th>Papel</th><th>Nome</th><th>Chave (CNPJ/CPF)</th><th>Nº editais</th></tr></thead>
+        <thead><tr><th>Papel</th><th>Nome</th><th>Chave (CNPJ/CPF)</th><th>Execuções</th><th>Editais</th></tr></thead>
         <tbody></tbody>
       </table>
       <div class="empty" id="cruz-vazio" style="display:none">Sem recorrências ainda — investigue 2+ editais para começar a cruzar.</div>
@@ -114,7 +114,7 @@
         const nivel = (e.nivel_risco || "").replace(/[^A-ZÀ-Ú]/gi, "");
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${e.edital_numero || "—"}</td>
+          <td>${e.edital_numero || '<span class="muted">(não identificado)</span>'}</td>
           <td class="muted">${e.orgao || "—"}</td>
           <td><b>${e.score_geral ?? "—"}</b></td>
           <td>${e.nivel_risco ? `<span class="badge ${nivel}">${e.nivel_risco}</span>` : "—"}</td>
@@ -139,7 +139,8 @@
           <td><span class="pill">${r.papel}</span></td>
           <td>${r.nome || "—"}</td>
           <td class="muted">${r.chave || "—"}</td>
-          <td><b>${r.n_editais}</b></td>`;
+          <td><b>${r.n_execucoes}</b></td>
+          <td class="muted">${r.n_editais || 0}</td>`;
         tb.appendChild(tr);
       }
     }
