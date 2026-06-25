@@ -1,5 +1,34 @@
 """Testes do chunking e da mesclagem da extração (sem LLM)."""
-from extrator.extrator import _chunks, _chave_empresa, _merge_extracoes
+from extrator.extrator import (
+    _chunks, _chave_empresa, _merge_extracoes, _completar_meta, _norm_numero,
+)
+
+
+def test_completar_meta_numero_por_regex():
+    texto = "ATA DE RESULTADO\nPregão Eletrônico nº 021/2026\nÓrgão: HMTJ\nData 19/06/2026"
+    meta = _completar_meta({}, texto)
+    assert meta["numero"] == "021/2026"
+    assert meta["data"] == "19/06/2026"
+
+
+def test_completar_meta_nao_sobrescreve_llm():
+    meta = _completar_meta({"numero": "999/2026", "data": "01/01/2026"},
+                           "Pregão nº 021/2026 em 19/06/2026")
+    assert meta["numero"] == "999/2026"   # o que o LLM trouxe tem prioridade
+    assert meta["data"] == "01/01/2026"
+
+
+def test_completar_meta_fallback_nome_arquivo():
+    # Sem número no texto → usa o nome do arquivo enviado.
+    meta = _completar_meta({}, "documento sem número de edital",
+                           nome_original="020-2026 RESULTADO [manifesto].pdf")
+    assert meta["numero"] == "020/2026"
+
+
+def test_norm_numero():
+    assert _norm_numero("021 - 2026") == "021/2026"
+    assert _norm_numero("021-2026") == "021/2026"
+    assert _norm_numero("021/2026") == "021/2026"
 
 
 def test_chunks_cobre_todo_o_texto_com_sobreposicao():

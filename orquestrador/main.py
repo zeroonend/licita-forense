@@ -38,7 +38,7 @@ SCHEMA_VERSION = "investigation_result.v1"
 def investigar(caminho_pdf: str, aprofundar: bool = False,
                limite_aprofundamento: int = 30, persistir: bool = True,
                gravar_cache: bool = False, replay_store: dict = None,
-               usar_banco: bool = False) -> dict:
+               usar_banco: bool = False, nome_original: str = None) -> dict:
     """
     Pipeline completo de investigação.
     Retorna um artefato `investigation_result.v1` (schema versionado, com
@@ -74,7 +74,7 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
     pdf_sha256, pdf_bytes = _hash_arquivo(caminho_pdf)
 
     print(f"\n[1/5] Extraindo licitantes de {caminho_pdf}...")
-    licitantes = extrair_licitantes(caminho_pdf)
+    licitantes = extrair_licitantes(caminho_pdf, nome_original=nome_original)
     print(f"      → {len(licitantes['empresas'])} empresas encontradas")
 
     print("\n[2/5] Consultando CNPJá para cada licitante...")
@@ -137,7 +137,7 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
             "status": "partial" if warnings else "success",
             "input_pdf_sha256": pdf_sha256,
             "input_pdf_bytes": pdf_bytes,
-            "source_file_name": os.path.basename(caminho_pdf),
+            "source_file_name": nome_original or os.path.basename(caminho_pdf),
             "parameters": {
                 "extractor_max_chars": MAX_CHARS,
                 "aprofundar": aprofundar,
