@@ -83,7 +83,7 @@ def test_upload_rejeita_nao_pdf(cliente):
 
 def test_upload_dispara_job_e_indexa(cliente, monkeypatch):
     # pipeline falso: grava no banco e devolve o id, sem tocar em LLM/APIs.
-    def fake_pipeline(caminho_pdf, aprofundar):
+    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None):
         eid = "job-exec-1"
         conn = db.conectar()
         try:

@@ -43,19 +43,20 @@ _jobs_lock = threading.Lock()
 
 
 # ------------------------------------------------------------- pipeline (job)
-def executar_pipeline(caminho_pdf: str, aprofundar: bool) -> str:
+def executar_pipeline(caminho_pdf: str, aprofundar: bool, nome_original: str = None) -> str:
     """
     Roda a investigação completa e devolve o id da execução. Isolada para os
     testes poderem substituir sem disparar LLM/APIs reais.
     """
     from orquestrador.main import investigar
-    art = investigar(caminho_pdf, aprofundar=aprofundar, usar_banco=True)
+    art = investigar(caminho_pdf, aprofundar=aprofundar, usar_banco=True,
+                     nome_original=nome_original)
     return art["execution"]["id"]
 
 
-def _rodar_job(job_id: str, caminho_pdf: str, aprofundar: bool):
+def _rodar_job(job_id: str, caminho_pdf: str, aprofundar: bool, nome_original: str = None):
     try:
-        eid = executar_pipeline(caminho_pdf, aprofundar)
+        eid = executar_pipeline(caminho_pdf, aprofundar, nome_original)
         _set_job(job_id, status="concluido", execucao_id=eid)
     except Exception as e:  # noqa: BLE001 — superfície para o painel
         _set_job(job_id, status="erro", erro=str(e))
@@ -79,7 +80,7 @@ async def criar_investigacao(arquivo: UploadFile = File(...),
     with open(destino, "wb") as f:
         shutil.copyfileobj(arquivo.file, f)
     _set_job(job_id, status="rodando", arquivo=arquivo.filename, execucao_id=None, erro=None)
-    threading.Thread(target=_rodar_job, args=(job_id, destino, aprofundar),
+    threading.Thread(target=_rodar_job, args=(job_id, destino, aprofundar, arquivo.filename),
                      daemon=True).start()
     return {"job_id": job_id, "status": "rodando"}
 
