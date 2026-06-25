@@ -14,7 +14,6 @@
       --muted: #8a8f9c;
       --empresa: #4a90d9;
       --socio: #d99a4a;
-      --socio-admin: #f0902e;
       --externa: #9a6dd9;
       --externa-scp: #d96d9a;
       --scp: #2fae9e;
@@ -139,6 +138,7 @@
     .link { stroke: var(--border); stroke-width: 1.5px; }
     .link.suspeito { stroke: var(--vinculo); stroke-width: 2.5px; stroke-dasharray: 4 2; }
     .node circle { stroke: var(--bg); stroke-width: 2px; cursor: pointer; }
+    .cruz-admin { stroke: #fff; stroke-width: 2px; pointer-events: none; }
     .node text {
       fill: var(--text);
       font-size: 11px;
@@ -212,7 +212,7 @@
     <div class="legenda">
       <div class="item"><span class="dot" style="background:var(--empresa)"></span> Empresa licitante</div>
       <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio</div>
-      <div class="item"><span class="dot" style="background:var(--socio-admin)"></span> Sócio administrador</div>
+      <div class="item"><span class="dot" style="background:var(--socio)"></span> Sócio administrador (marcado com ✚)</div>
       <div class="item"><span class="dot" style="background:var(--externa)"></span> Empresa externa (não-SCP)</div>
       <div class="item"><span class="dot" style="background:var(--externa-scp)"></span> Empresa externa SCP</div>
       <div class="item"><span class="dot" style="background:var(--scp)"></span> Grupo de SCPs (aprofundamento)</div>
@@ -580,9 +580,6 @@
         // Empresas externas SCP ganham cor própria (separadas das não-SCP).
         if (d.tipo === "externa" && ehSCP(d.dados && d.dados.razao_social))
           return getCss("--externa-scp");
-        // Sócio administrador (elo de controle) se destaca dos demais sócios.
-        if (d.tipo === "socio" && d.admin)
-          return getCss("--socio-admin");
         return CORES_TIPO[d.tipo] || getCss("--muted");
       };
       node.append("circle")
@@ -590,6 +587,14 @@
           : d.tipo === "scp_grupo" ? 14
           : d.tipo === "externa" ? 12 : 10)
         .attr("fill", corNo);
+
+      // Sócio administrador: mesma cor de sócio, marcado com uma cruz (elo de
+      // controle) — diferenciar por cor era difícil de enxergar.
+      const admins = node.filter(d => d.tipo === "socio" && d.admin);
+      admins.append("line").attr("class", "cruz-admin")
+        .attr("x1", -5).attr("y1", 0).attr("x2", 5).attr("y2", 0);
+      admins.append("line").attr("class", "cruz-admin")
+        .attr("x1", 0).attr("y1", -5).attr("x2", 0).attr("y2", 5);
 
       node.append("text")
         .attr("class", d => d.tipo === "externa" ? "lbl-ext" : "lbl")
