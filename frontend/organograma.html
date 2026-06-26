@@ -201,6 +201,9 @@
 
     <div class="secao-titulo" id="dominios-titulo" style="display:none">Domínios dos licitantes</div>
     <div id="dominios-lista"></div>
+
+    <div class="secao-titulo" id="fiscal-titulo" style="display:none">Regularidade fiscal</div>
+    <div id="fiscal-lista"></div>
   </aside>
 
   <main id="graph">
@@ -321,7 +324,54 @@
 
       atualizarPainel(score, nomePorCnpj);
       atualizarDominios(grafo.empresas || []);
+      atualizarRegularidade(grafo.empresas || []);
       desenharGrafo(grafo);
+    }
+
+    // Regularidade fiscal por licitante (certidões Federal/Estadual/Municipal/
+    // FGTS/Trabalhista). Vencedor irregular é destacado — deveria ter sido
+    // inabilitado (mesmo sinal da regra vencedor_irregular do scoring).
+    const ehVencedor = (r) => /vencedor|1[ºo°]\s*lugar|primeiro|adjudicat|homologad/i.test(r || "");
+    function atualizarRegularidade(empresas) {
+      const lista = document.getElementById("fiscal-lista");
+      const titulo = document.getElementById("fiscal-titulo");
+      lista.textContent = "";
+      const comCert = empresas.filter(e => e.regularidade_fiscal);
+      titulo.style.display = comCert.length ? "" : "none";
+      if (!comCert.length) return;
+
+      comCert.forEach(e => {
+        const rf = e.regularidade_fiscal || {};
+        const irregular = rf.regular === false;
+        const venc = irregular && ehVencedor(e.resultado);
+        const div = document.createElement("div");
+        div.className = "alerta";
+        const nome = document.createElement("div");
+        nome.style.cssText = "font-weight:600;font-size:12px";
+        nome.textContent = e.razao_social || e.cnpj || "—";
+        div.appendChild(nome);
+
+        const st = document.createElement("div");
+        st.style.cssText = "font-size:11px;margin-top:4px;color:"
+          + (irregular ? "var(--vinculo)" : "var(--baixo)");
+        st.textContent = (irregular ? "⚠ Irregular" : "Regular")
+          + (rf.irregulares && rf.irregulares.length ? " — débito: " + rf.irregulares.join(", ") : "")
+          + (rf.vencidas && rf.vencidas.length ? " — vencida: " + rf.vencidas.join(", ") : "");
+        div.appendChild(st);
+
+        const esf = document.createElement("div");
+        esf.style.cssText = "font-size:11px;margin-top:2px;color:var(--muted)";
+        esf.textContent = "Esferas: " + Object.keys(rf.esferas || {}).join(", ") || "—";
+        div.appendChild(esf);
+
+        if (venc) {
+          const w = document.createElement("div");
+          w.style.cssText = "font-size:11px;margin-top:2px;color:var(--vinculo);font-weight:600";
+          w.textContent = "⚠ Venceu irregular — deveria ter sido inabilitada";
+          div.appendChild(w);
+        }
+        lista.appendChild(div);
+      });
     }
 
     // Mostra o domínio de e-mail e o titular (registro.br) de cada licitante,
@@ -704,6 +754,11 @@
           linha(`Domínio: ${e.email_dominio}`);
         if (e.dominio_dono || e.dominio_dono_nome)
           linha(`Titular do domínio: ${e.dominio_dono_nome || e.dominio_dono}`);
+        if (e.regularidade_fiscal) {
+          const rf = e.regularidade_fiscal;
+          linha(`Regularidade fiscal: ${rf.regular === false ? "IRREGULAR" : rf.regular ? "Regular" : "—"}`
+            + (rf.irregulares && rf.irregulares.length ? " (" + rf.irregulares.join(", ") + ")" : ""));
+        }
       } else if (d.tipo === "externa") {
         const e = d.dados;
         titulo(e.razao_social || e.cnpj);

@@ -62,6 +62,21 @@ def test_construir_grafo_marca_socio_administrador_em_ambas():
     assert v["qualificacoes"]["11111111000111"] == "Sócio-Administrador"
 
 
+def test_enriquecer_certidoes_casa_por_cnpj(monkeypatch):
+    dados = [{"cnpj": "11.111.111/0001-11", "razao_social": "ALFA", "resultado": "VENCEDOR"}]
+    # Evita LLM/pdfplumber: analisar_certidao_pdf devolve registros fake por caminho.
+    fakes = {
+        "fed.pdf": {"cnpj": "11111111000111", "esfera": "federal", "regular": False,
+                    "valida_ate": "31/12/2999"},
+        "outra.pdf": {"cnpj": "99999999000199", "esfera": "municipal", "regular": True},
+    }
+    monkeypatch.setattr(om, "analisar_certidao_pdf", lambda c: fakes[c])
+    avisos = om._enriquecer_certidoes(dados, ["fed.pdf", "outra.pdf"], {"data": "01/06/2026"})
+    assert len(dados[0]["certidoes"]) == 1                       # só a federal casou
+    assert dados[0]["regularidade_fiscal"]["regular"] is False
+    assert any("sem licitante" in a for a in avisos)            # a outra virou aviso
+
+
 def test_construir_grafo_completa_cnpj_das_externas():
     dados = [{"cnpj": "11111111000111", "qsa": []}]
     expansao = {"x|FULANO": [{"cnpj": "37083255", "razao_social": "BRAIN CARE"}]}

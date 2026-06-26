@@ -1,7 +1,8 @@
 """Testes das regras determinísticas de scoring e dos normalizadores."""
 from skills.scoring_conluio.skill import (
     calcular_score, _so_digitos, _normalizar_endereco, _parse_data, _parse_valor,
-    _dominio_email, _classificar_nivel, _e_administrador, RULESET_VERSION, PESOS,
+    _dominio_email, _classificar_nivel, _e_administrador, _e_vencedor,
+    RULESET_VERSION, PESOS,
 )
 
 
@@ -72,6 +73,38 @@ def test_e_administrador():
     assert not _e_administrador("Sócio")
     assert not _e_administrador("Sócio Ostensivo")
     assert not _e_administrador(None)
+
+
+def test_e_vencedor():
+    assert _e_vencedor("VENCEDOR")
+    assert _e_vencedor("1º lugar")
+    assert _e_vencedor("Homologado")
+    assert not _e_vencedor("desclassificado")
+    assert not _e_vencedor("2º lugar")
+    assert not _e_vencedor(None)
+
+
+def test_vencedor_irregular_dispara_so_para_vencedor():
+    g = _grafo([
+        {"cnpj": "11111111000111", "razao_social": "ALFA", "resultado": "VENCEDOR",
+         "regularidade_fiscal": {"regular": False, "irregulares": ["municipal"], "vencidas": []}},
+        {"cnpj": "22222222000122", "razao_social": "BETA", "resultado": "2º lugar",
+         "regularidade_fiscal": {"regular": False, "irregulares": ["federal"], "vencidas": []}},
+    ])
+    r = calcular_score(g)
+    tipos = [a["tipo"] for a in r["alertas"]]
+    assert tipos.count("vencedor_irregular") == 1   # só o vencedor (ALFA)
+    alerta = next(a for a in r["alertas"] if a["tipo"] == "vencedor_irregular")
+    assert alerta["empresas"] == ["11111111000111"]
+    assert r["score_geral"] >= PESOS["vencedor_irregular"]
+
+
+def test_vencedor_regular_nao_dispara():
+    g = _grafo([
+        {"cnpj": "11111111000111", "resultado": "VENCEDOR",
+         "regularidade_fiscal": {"regular": True, "irregulares": [], "vencidas": []}},
+    ])
+    assert not any(a["tipo"] == "vencedor_irregular" for a in calcular_score(g)["alertas"])
 
 
 def test_socio_administrador_em_comum_pesa_mais():

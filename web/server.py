@@ -43,20 +43,22 @@ _jobs_lock = threading.Lock()
 
 
 # ------------------------------------------------------------- pipeline (job)
-def executar_pipeline(caminho_pdf: str, aprofundar: bool, nome_original: str = None) -> str:
+def executar_pipeline(caminho_pdf: str, aprofundar: bool, nome_original: str = None,
+                      certidoes_pdfs: list = None) -> str:
     """
     Roda a investigação completa e devolve o id da execução. Isolada para os
     testes poderem substituir sem disparar LLM/APIs reais.
     """
     from orquestrador.main import investigar
     art = investigar(caminho_pdf, aprofundar=aprofundar, usar_banco=True,
-                     nome_original=nome_original)
+                     nome_original=nome_original, certidoes_pdfs=certidoes_pdfs)
     return art["execution"]["id"]
 
 
-def _rodar_job(job_id: str, caminho_pdf: str, aprofundar: bool, nome_original: str = None):
+def _rodar_job(job_id: str, caminho_pdf: str, aprofundar: bool, nome_original: str = None,
+               certidoes_pdfs: list = None):
     try:
-        eid = executar_pipeline(caminho_pdf, aprofundar, nome_original)
+        eid = executar_pipeline(caminho_pdf, aprofundar, nome_original, certidoes_pdfs)
         _set_job(job_id, status="concluido", execucao_id=eid)
     except Exception as e:  # noqa: BLE001 — superfície para o painel
         _set_job(job_id, status="erro", erro=str(e))
@@ -71,18 +73,33 @@ def _set_job(job_id, **campos):
 # ------------------------------------------------------------------ endpoints
 @app.post("/api/investigacoes")
 async def criar_investigacao(arquivo: UploadFile = File(...),
-                             aprofundar: bool = Form(False)):
-    """Recebe o PDF, dispara a investigação em background e devolve o job."""
+                             aprofundar: bool = Form(False),
+                             certidoes: list[UploadFile] = File(default=[])):
+    """
+    Recebe o edital + certidões (opcionais), dispara a investigação em background.
+    """
     if not (arquivo.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "Envie um arquivo PDF.")
     job_id = str(uuid.uuid4())
     destino = os.path.join(UPLOADS_DIR, f"{job_id}.pdf")
     with open(destino, "wb") as f:
         shutil.copyfileobj(arquivo.file, f)
-    _set_job(job_id, status="rodando", arquivo=arquivo.filename, execucao_id=None, erro=None)
-    threading.Thread(target=_rodar_job, args=(job_id, destino, aprofundar, arquivo.filename),
+
+    cert_paths = []
+    for i, cert in enumerate(certidoes or []):
+        if not (cert.filename or "").lower().endswith(".pdf"):
+            continue  # ignora campos vazios / não-PDF
+        cpath = os.path.join(UPLOADS_DIR, f"{job_id}_cert_{i}.pdf")
+        with open(cpath, "wb") as f:
+            shutil.copyfileobj(cert.file, f)
+        cert_paths.append(cpath)
+
+    _set_job(job_id, status="rodando", arquivo=arquivo.filename, execucao_id=None,
+             erro=None, n_certidoes=len(cert_paths))
+    threading.Thread(target=_rodar_job,
+                     args=(job_id, destino, aprofundar, arquivo.filename, cert_paths),
                      daemon=True).start()
-    return {"job_id": job_id, "status": "rodando"}
+    return {"job_id": job_id, "status": "rodando", "n_certidoes": len(cert_paths)}
 
 
 @app.get("/api/jobs/{job_id}")

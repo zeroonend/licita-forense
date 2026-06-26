@@ -66,6 +66,11 @@
         <label class="inline"><input type="checkbox" id="aprofundar"> Aprofundar rede (SCPs)</label>
         <button id="enviar">Investigar</button>
       </div>
+      <div class="row" style="margin-top:10px">
+        <label class="inline" style="gap:8px">Certidões fiscais (PDF, opcional, várias):
+          <input type="file" id="certidoes" accept="application/pdf" multiple>
+        </label>
+      </div>
       <div class="status" id="status"></div>
     </div>
 
@@ -151,6 +156,7 @@
       const fd = new FormData();
       fd.append("arquivo", f);
       fd.append("aprofundar", $("#aprofundar").checked);
+      for (const c of ($("#certidoes").files || [])) fd.append("certidoes", c);
       $("#enviar").disabled = true;
       $("#status").textContent = "Enviando…";
       try {
