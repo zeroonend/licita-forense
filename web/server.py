@@ -44,21 +44,23 @@ _jobs_lock = threading.Lock()
 
 # ------------------------------------------------------------- pipeline (job)
 def executar_pipeline(caminho_pdf: str, aprofundar: bool, nome_original: str = None,
-                      certidoes_pdfs: list = None) -> str:
+                      certidoes_pdfs: list = None, api_certidoes: bool = False) -> str:
     """
     Roda a investigação completa e devolve o id da execução. Isolada para os
     testes poderem substituir sem disparar LLM/APIs reais.
     """
     from orquestrador.main import investigar
     art = investigar(caminho_pdf, aprofundar=aprofundar, usar_banco=True,
-                     nome_original=nome_original, certidoes_pdfs=certidoes_pdfs)
+                     nome_original=nome_original, certidoes_pdfs=certidoes_pdfs,
+                     api_certidoes=api_certidoes)
     return art["execution"]["id"]
 
 
 def _rodar_job(job_id: str, caminho_pdf: str, aprofundar: bool, nome_original: str = None,
-               certidoes_pdfs: list = None):
+               certidoes_pdfs: list = None, api_certidoes: bool = False):
     try:
-        eid = executar_pipeline(caminho_pdf, aprofundar, nome_original, certidoes_pdfs)
+        eid = executar_pipeline(caminho_pdf, aprofundar, nome_original, certidoes_pdfs,
+                                api_certidoes)
         _set_job(job_id, status="concluido", execucao_id=eid)
     except Exception as e:  # noqa: BLE001 — superfície para o painel
         _set_job(job_id, status="erro", erro=str(e))
@@ -74,6 +76,7 @@ def _set_job(job_id, **campos):
 @app.post("/api/investigacoes")
 async def criar_investigacao(arquivo: UploadFile = File(...),
                              aprofundar: bool = Form(False),
+                             api_certidoes: bool = Form(False),
                              certidoes: list[UploadFile] = File(default=[])):
     """
     Recebe o edital + certidões (opcionais), dispara a investigação em background.
@@ -97,7 +100,8 @@ async def criar_investigacao(arquivo: UploadFile = File(...),
     _set_job(job_id, status="rodando", arquivo=arquivo.filename, execucao_id=None,
              erro=None, n_certidoes=len(cert_paths))
     threading.Thread(target=_rodar_job,
-                     args=(job_id, destino, aprofundar, arquivo.filename, cert_paths),
+                     args=(job_id, destino, aprofundar, arquivo.filename, cert_paths,
+                           api_certidoes),
                      daemon=True).start()
     return {"job_id": job_id, "status": "rodando", "n_certidoes": len(cert_paths)}
 

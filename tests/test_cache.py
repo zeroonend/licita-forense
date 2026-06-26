@@ -83,3 +83,26 @@ def test_http_get_record_e_replay(monkeypatch):
     body2, _ = cache.http_get("https://api/x", headers={"Authorization": "SECRETO"})
     assert body2 == body
     assert chamadas == []  # replay não acessa a rede
+
+
+def test_http_post_token_fora_da_chave_e_trilha(monkeypatch):
+    capturado = {}
+    def fake_post(url, data=None, timeout=30):
+        capturado["data"] = data
+        return _FakeResp({"code": 200})
+    monkeypatch.setattr(cache.httpx, "post", fake_post)
+
+    cache.configurar("record")
+    body, status = cache.http_post("https://api/cnd", dados={"cnpj": "1"},
+                                   segredos={"token": "SECRETO"})
+    assert body == {"code": 200} and status == 200
+    assert capturado["data"]["token"] == "SECRETO"   # token vai no corpo
+    # mas não aparece na trilha nem no store (chave não inclui segredos)
+    assert "SECRETO" not in str(cache.registros())
+    assert "SECRETO" not in str(cache.store())
+
+    # replay serve pela chave SEM o token (só dados)
+    cache.configurar("replay", store=cache.store())
+    body2, _ = cache.http_post("https://api/cnd", dados={"cnpj": "1"},
+                               segredos={"token": "OUTRO"})
+    assert body2 == body

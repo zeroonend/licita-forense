@@ -68,3 +68,44 @@ def test_resumir_certidao_vencida_torna_irregular():
     r = cert.resumir_regularidade(cs, data_referencia="01/06/2026")
     assert r["regular"] is False
     assert r["vencidas"] == ["federal"]
+
+
+# ---- provider Infosimples ----
+def test_classificar_regular():
+    assert cert._classificar_regular("Certidão Negativa") is True
+    assert cert._classificar_regular("Positiva com efeitos de Negativa") is True
+    assert cert._classificar_regular("Certidão Positiva") is False
+    assert cert._classificar_regular("", {"debitos_rfb": [{"x": 1}]}) is False
+    assert cert._classificar_regular("", {}) is True
+
+
+def test_buscar_api_sem_token_retorna_vazio(monkeypatch):
+    monkeypatch.delenv("INFOSIMPLES_TOKEN", raising=False)
+    assert cert.buscar_certidoes_api("37083255000175", uf="GO") == []
+
+
+def test_buscar_api_mapeia_resposta(monkeypatch):
+    monkeypatch.setenv("INFOSIMPLES_TOKEN", "tok-123")
+    chamadas = []
+
+    def fake_post(url, dados=None, segredos=None, timeout=30):
+        chamadas.append((url, dados, segredos))
+        esfera_neg = {"code": 200, "site_receipts": ["https://infosimples/pdf"],
+                      "data": [{"situacao": "Negativa", "validade_data": "01/12/2026",
+                                "certidao_codigo": "ABC"}]}
+        # federal vem Positiva (irregular), o resto Negativa
+        if "pgfn" in url:
+            return ({"code": 200, "site_receipts": ["https://infosimples/fed"],
+                     "data": [{"situacao": "Positiva", "validade_data": "01/12/2026"}]}, 200)
+        return (esfera_neg, 200)
+    monkeypatch.setattr(cert.cache, "http_post", fake_post)
+
+    regs = cert.buscar_certidoes_api("37.083.255/0001-75", uf="GO")
+    esferas = {r["esfera"] for r in regs}
+    assert {"federal", "fgts", "trabalhista", "estadual"} <= esferas
+    fed = next(r for r in regs if r["esfera"] == "federal")
+    assert fed["regular"] is False and fed["fonte"] == "infosimples"
+    assert fed["comprovante"] == "https://infosimples/fed"
+    # token foi enviado como segredo (fora de `dados`), CNPJ normalizado em dados
+    assert all(s["token"] == "tok-123" for _, _, s in chamadas)
+    assert all(d["cnpj"] == "37083255000175" for _, d, _ in chamadas)

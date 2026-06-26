@@ -83,7 +83,7 @@ def test_upload_rejeita_nao_pdf(cliente):
 
 def test_upload_dispara_job_e_indexa(cliente, monkeypatch):
     # pipeline falso: grava no banco e devolve o id, sem tocar em LLM/APIs.
-    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None, certidoes_pdfs=None):
+    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None, certidoes_pdfs=None, api_certidoes=False):
         eid = "job-exec-1"
         conn = db.conectar()
         try:
@@ -113,7 +113,7 @@ def test_upload_dispara_job_e_indexa(cliente, monkeypatch):
 def test_upload_com_certidoes_passa_caminhos(cliente, monkeypatch):
     capturado = {}
 
-    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None, certidoes_pdfs=None):
+    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None, certidoes_pdfs=None, api_certidoes=False):
         capturado["certidoes"] = list(certidoes_pdfs or [])
         return "exec-cert"
     monkeypatch.setattr(server, "executar_pipeline", fake_pipeline)
@@ -135,6 +135,25 @@ def test_upload_com_certidoes_passa_caminhos(cliente, monkeypatch):
         time.sleep(0.1)
     assert len(capturado["certidoes"]) == 2
     assert all(p.endswith(".pdf") for p in capturado["certidoes"])
+
+
+def test_upload_repassa_flag_api_certidoes(cliente, monkeypatch):
+    capturado = {}
+
+    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None, certidoes_pdfs=None, api_certidoes=False):
+        capturado["api"] = api_certidoes
+        return "exec-api"
+    monkeypatch.setattr(server, "executar_pipeline", fake_pipeline)
+
+    r = cliente.post("/api/investigacoes", data={"api_certidoes": "true"},
+                     files={"arquivo": ("e.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")})
+    assert r.status_code == 200
+    job_id = r.json()["job_id"]
+    for _ in range(40):
+        if cliente.get(f"/api/jobs/{job_id}").json()["status"] in ("concluido", "erro"):
+            break
+        time.sleep(0.1)
+    assert capturado["api"] is True
 
 
 def test_artefato_e_laudo_pdf(cliente, tmp_path):
