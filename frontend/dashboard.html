@@ -71,6 +71,9 @@
           <input type="file" id="certidoes" accept="application/pdf" multiple>
         </label>
       </div>
+      <div class="row" style="margin-top:8px">
+        <label class="inline"><input type="checkbox" id="api-certidoes"> Buscar certidões automaticamente (API Infosimples — requer token)</label>
+      </div>
       <div class="status" id="status"></div>
     </div>
 
@@ -156,6 +159,7 @@
       const fd = new FormData();
       fd.append("arquivo", f);
       fd.append("aprofundar", $("#aprofundar").checked);
+      fd.append("api_certidoes", $("#api-certidoes").checked);
       for (const c of ($("#certidoes").files || [])) fd.append("certidoes", c);
       $("#enviar").disabled = true;
       $("#status").textContent = "Enviando…";

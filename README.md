@@ -21,9 +21,11 @@ saída versionada e trilha de execução para valor probatório:
 - `consulta_cnpj` — wrapper CNPJá: dados da empresa + QSA
 - `busca_reversa_socios` — dado sócio (nome + CPF 6 dígitos), retorna todas as empresas
 - `consulta_dominio` — titular de domínio via RDAP do registro.br (.br)
-- `analise_certidoes` — analisa certidões de regularidade fiscal (Federal RFB/PGFN,
-  FGTS, Trabalhista/CNDT, Estadual, Municipal) a partir do PDF; fonte por upload
-  hoje, com seam para API paga (Infosimples/SERPRO) depois
+- `analise_certidoes` — regularidade fiscal (Federal RFB/PGFN, FGTS, Trabalhista/
+  CNDT, Estadual, Municipal). Duas fontes: **upload de PDF** (parse LLM) e **API
+  Infosimples** (`buscar_certidoes_api`, devolve o PDF oficial). Federal/FGTS/
+  trabalhista sempre; estadual pela UF; municipal por município configurado
+  (cobertura parcial). Confirme os caminhos das consultas na doc da sua conta.
 - `laudo_pdf` — gera o laudo investigativo em PDF (rede de vínculos + alertas + texto)
 - `scoring_conluio` — regras determinísticas (CADE); sem LLM, mesmo grafo → mesmo score
 - `gera_laudo` — síntese Claude API
@@ -44,8 +46,12 @@ saída versionada e trilha de execução para valor probatório:
 cp .env.example .env
 # preencha as variáveis (ANTHROPIC_API_KEY e/ou GEMINI_API_KEY, CNPJA_API_KEY)
 pip install -r requirements.txt
-python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend] [--pdf] [--banco]
+python orquestrador/main.py <caminho_do_pdf> [--aprofundar] [--frontend] [--pdf] [--banco] [--api-certidoes]
 ```
+
+`--api-certidoes` busca a regularidade fiscal de cada licitante via Infosimples
+(requer `INFOSIMPLES_TOKEN`). No painel web, o mesmo está no checkbox
+"Buscar certidões automaticamente". Sem token/sem PDF, a etapa é pulada.
 
 Cada execução grava o artefato versionado em `execucoes/<id>.json`.
 `--pdf` gera o laudo formatado em `laudos/laudo_<id>.pdf`.

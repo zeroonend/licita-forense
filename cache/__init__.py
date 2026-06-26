@@ -90,3 +90,25 @@ def http_get(url: str, headers: dict = None, params: dict = None, timeout: int =
     res = executar("http_get", {"url": url, "params": params or {}}, _chamar,
                    rotulo=f"GET {url}")
     return res["json"], res["status"]
+
+
+def http_post(url: str, dados: dict = None, segredos: dict = None, timeout: int = 30):
+    """
+    POST com cache/replay. Retorna (json, status_code).
+    `segredos` (ex.: token de API) são enviados no corpo MAS ficam fora da chave
+    de cache e da trilha — como os headers no http_get. Levanta em erro HTTP
+    (record/off) ou ReplayMiss (replay); os chamadores tratam o fallback.
+    """
+    def _chamar():
+        corpo = {**(dados or {}), **(segredos or {})}
+        r = httpx.post(url, data=corpo, timeout=timeout)
+        r.raise_for_status()
+        try:
+            payload = r.json()
+        except Exception:
+            payload = None
+        return {"status": r.status_code, "json": payload}
+
+    res = executar("http_post", {"url": url, "dados": dados or {}}, _chamar,
+                   rotulo=f"POST {url}")
+    return res["json"], res["status"]

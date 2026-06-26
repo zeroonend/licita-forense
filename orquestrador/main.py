@@ -3,6 +3,7 @@ Orquestrador principal — pipeline determinístico de investigação.
 Recebe caminho de documento (PDF) e retorna grafo de vínculos + laudo.
 """
 import os
+import re
 import sys
 import json
 import uuid
@@ -21,7 +22,8 @@ from skills.consulta_cnpj.skill import consultar_cnpj
 from skills.busca_reversa_socios.skill import buscar_empresas_do_socio
 from skills.consulta_dominio.skill import consultar_dono_dominio
 from skills.analise_certidoes.skill import (
-    analisar_certidao_pdf, resumir_regularidade, CERTIDAO_PROMPT_VERSION,
+    analisar_certidao_pdf, resumir_regularidade, buscar_certidoes_api,
+    CERTIDAO_PROMPT_VERSION,
 )
 from skills.scoring_conluio.skill import (
     calcular_score, _dominio_email, PROVEDORES_GENERICOS, _e_administrador,
@@ -42,7 +44,7 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
                limite_aprofundamento: int = 30, persistir: bool = True,
                gravar_cache: bool = False, replay_store: dict = None,
                usar_banco: bool = False, nome_original: str = None,
-               certidoes_pdfs: list = None) -> dict:
+               certidoes_pdfs: list = None, api_certidoes: bool = False) -> dict:
     """
     Pipeline completo de investigação.
     Retorna um artefato `investigation_result.v1` (schema versionado, com
@@ -111,10 +113,10 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
     print("\n[2.5] Enriquecendo domínios de e-mail (registro.br)...")
     _enriquecer_dominios(dados_empresas, conn)
 
-    if certidoes_pdfs:
+    if certidoes_pdfs or api_certidoes:
         print("\n[2.6] Analisando certidões de regularidade fiscal...")
         warnings.extend(_enriquecer_certidoes(dados_empresas, certidoes_pdfs,
-                                              licitantes.get("meta")))
+                                              licitantes.get("meta"), usar_api=api_certidoes))
 
     print("\n[3/5] Investigando sócios (busca reversa)...")
     expansao_socios = investigar_socios(dados_empresas)
@@ -316,11 +318,12 @@ def _enriquecer_dominios(dados_empresas: list, conn=None) -> None:
                 emp["dominio_dono_nome"] = dono["nome"]
 
 
-def _enriquecer_certidoes(dados_empresas: list, certidoes_pdfs: list, meta: dict = None) -> list:
+def _enriquecer_certidoes(dados_empresas: list, certidoes_pdfs: list = None,
+                          meta: dict = None, usar_api: bool = False) -> list:
     """
-    Analisa cada PDF de certidão, casa pelo CNPJ com um licitante e anexa
-    `certidoes` (lista) + `regularidade_fiscal` (resumo). Mutação in-place.
-    Retorna a lista de avisos (ex.: certidão sem licitante correspondente).
+    Reúne as certidões de regularidade fiscal de cada licitante — por PDF
+    enviado e/ou pela API (Infosimples) — casa por CNPJ, anexa `certidoes` +
+    `regularidade_fiscal` (resumo). Mutação in-place. Retorna avisos.
     Dado temporal — não entra no cache de empresas.
     """
     por_cnpj = {}
@@ -330,8 +333,8 @@ def _enriquecer_certidoes(dados_empresas: list, certidoes_pdfs: list, meta: dict
             por_cnpj[digitos] = emp
 
     avisos = []
-    data_ref = (meta or {}).get("data")
-    for caminho in certidoes_pdfs:
+    # 1) Certidões em PDF (habilitação): casadas por CNPJ.
+    for caminho in certidoes_pdfs or []:
         registro = analisar_certidao_pdf(caminho)
         if not registro or not registro.get("cnpj"):
             avisos.append(f"Certidão não interpretada ({os.path.basename(caminho)}).")
@@ -342,14 +345,45 @@ def _enriquecer_certidoes(dados_empresas: list, certidoes_pdfs: list, meta: dict
                           f"correspondente no edital — ignorada.")
             continue
         emp.setdefault("certidoes", []).append(registro)
-        print(f"      → certidão {registro.get('esfera', '?')} de "
+        print(f"      → [pdf] {registro.get('esfera', '?')} de "
               f"{emp.get('razao_social', registro['cnpj'])}: "
               f"{'regular' if registro.get('regular') else 'irregular'}")
 
+    # 2) API (Infosimples): completa as esferas que ainda faltam por licitante.
+    if usar_api:
+        for emp in dados_empresas:
+            cnpj = "".join(c for c in (emp.get("cnpj") or "") if c.isdigit())
+            if not cnpj:
+                continue
+            existentes = {c.get("esfera") for c in emp.get("certidoes", [])}
+            try:
+                novos = buscar_certidoes_api(cnpj, uf=_uf_empresa(emp))
+            except Exception as e:  # noqa: BLE001 — best-effort
+                avisos.append(f"API de certidões falhou para {cnpj}: {e}")
+                continue
+            for reg in novos:
+                if reg.get("esfera") not in existentes:   # PDF tem prioridade
+                    emp.setdefault("certidoes", []).append(reg)
+                    print(f"      → [api] {reg.get('esfera')} de "
+                          f"{emp.get('razao_social', cnpj)}: "
+                          f"{'regular' if reg.get('regular') else 'irregular'}")
+        if not os.getenv("INFOSIMPLES_TOKEN"):
+            avisos.append("Busca por API solicitada, mas INFOSIMPLES_TOKEN não configurado.")
+
+    data_ref = (meta or {}).get("data")
     for emp in dados_empresas:
         if emp.get("certidoes"):
             emp["regularidade_fiscal"] = resumir_regularidade(emp["certidoes"], data_ref)
     return avisos
+
+
+def _uf_empresa(emp: dict) -> str:
+    """UF do licitante (campo `uf`, com fallback no fim do endereço)."""
+    uf = (emp.get("uf") or "").strip().upper()
+    if len(uf) == 2 and uf.isalpha():
+        return uf
+    cauda = re.split(r"[,/]", emp.get("endereco") or "")[-1].strip().upper()
+    return cauda if len(cauda) == 2 and cauda.isalpha() else None
 
 
 def construir_grafo(dados_empresas: list, expansao_socios: dict = None) -> dict:
@@ -491,12 +525,13 @@ if __name__ == "__main__":
     gravar_cache = "--gravar-cache" in sys.argv
     pdf = "--pdf" in sys.argv
     usar_banco = "--banco" in sys.argv
+    api_certidoes = "--api-certidoes" in sys.argv
     if not args:
         print("Uso: python orquestrador/main.py <caminho_do_pdf> "
-              "[--aprofundar] [--frontend] [--gravar-cache] [--pdf] [--banco]")
+              "[--aprofundar] [--frontend] [--gravar-cache] [--pdf] [--banco] [--api-certidoes]")
         sys.exit(1)
     resultado = investigar(args[0], aprofundar=aprofundar, gravar_cache=gravar_cache,
-                           usar_banco=usar_banco)
+                           usar_banco=usar_banco, api_certidoes=api_certidoes)
     ex = resultado["execution"]
     print(f"\n=== EXECUÇÃO {ex['id']} ({ex['status']}) ===")
     print(f"PDF sha256: {ex['input_pdf_sha256'][:16]}... | extrator: {ex['components']['extractor_model']}"
