@@ -7,7 +7,7 @@ import re
 import unicodedata
 from datetime import datetime
 
-RULESET_VERSION = "scoring_conluio.v5"  # distingue sócio administrador em comum (vínculo de controle)
+RULESET_VERSION = "scoring_conluio.v6"  # + vencedor com regularidade fiscal irregular
 JANELA_ABERTURA_DIAS = 90    # aberturas dentro desta janela são consideradas próximas
 LIMIAR_COBERTURA = 0.005     # lances com diferença relativa <= 0.5% → lance de cobertura
 PASSO_REDONDO = 1000         # valor "redondo" = múltiplo de R$ 1.000 sem centavos
@@ -34,9 +34,18 @@ def _e_administrador(qualificacao: str) -> bool:
     return bool(_RE_ADMIN.search(qualificacao or ""))
 
 
+_RE_VENCEDOR = re.compile(r"vencedor|1[ºo°]\s*lugar|primeiro|adjudicat|homologad", re.IGNORECASE)
+
+
+def _e_vencedor(resultado: str) -> bool:
+    """True se o campo 'resultado' indica que a empresa venceu o certame."""
+    return bool(_RE_VENCEDOR.search(resultado or ""))
+
+
 PESOS = {
     "socio_administrador_em_comum": 45,
     "socio_em_comum": 35,
+    "vencedor_irregular": 30,
     "rede_externa_compartilhada": 25,
     "mesmo_dono_dominio": 25,
     "ponte_externa_aprofundada": 20,
@@ -334,6 +343,28 @@ def calcular_score(grafo: dict) -> dict:
                 "empresas": sorted(reg["cnpjs"]),
             })
             score += PESOS["mesmo_dono_dominio"]
+
+    # Regra 11: Vencedor com regularidade fiscal irregular — depende do
+    # enriquecimento de certidões (campo regularidade_fiscal); sem ele não dispara.
+    # Vencer estando irregular indica que deveria ter sido inabilitado (favorecimento).
+    for emp in empresas:
+        reg = emp.get("regularidade_fiscal") or {}
+        if reg.get("regular") is False and _e_vencedor(emp.get("resultado")):
+            motivos = []
+            if reg.get("irregulares"):
+                motivos.append("irregular em: " + ", ".join(reg["irregulares"]))
+            if reg.get("vencidas"):
+                motivos.append("vencida(s): " + ", ".join(reg["vencidas"]))
+            detalhe = ("; ".join(motivos)) or "regularidade fiscal irregular"
+            nome = emp.get("razao_social") or emp.get("cnpj") or "Licitante"
+            alertas.append({
+                "tipo": "vencedor_irregular",
+                "peso": PESOS["vencedor_irregular"],
+                "descricao": (f"{nome} venceu com regularidade fiscal irregular "
+                              f"({detalhe}) — deveria ter sido inabilitada (favorecimento)."),
+                "empresas": [emp.get("cnpj", "")],
+            })
+            score += PESOS["vencedor_irregular"]
 
     # Classificação usa o score bruto (aditivo); score_geral é normalizado a 0–100
     # para exibição, mas score_bruto preserva o valor real para auditoria.

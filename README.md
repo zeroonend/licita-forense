@@ -21,6 +21,9 @@ saída versionada e trilha de execução para valor probatório:
 - `consulta_cnpj` — wrapper CNPJá: dados da empresa + QSA
 - `busca_reversa_socios` — dado sócio (nome + CPF 6 dígitos), retorna todas as empresas
 - `consulta_dominio` — titular de domínio via RDAP do registro.br (.br)
+- `analise_certidoes` — analisa certidões de regularidade fiscal (Federal RFB/PGFN,
+  FGTS, Trabalhista/CNDT, Estadual, Municipal) a partir do PDF; fonte por upload
+  hoje, com seam para API paga (Infosimples/SERPRO) depois
 - `laudo_pdf` — gera o laudo investigativo em PDF (rede de vínculos + alertas + texto)
 - `scoring_conluio` — regras determinísticas (CADE); sem LLM, mesmo grafo → mesmo score
 - `gera_laudo` — síntese Claude API
@@ -71,7 +74,9 @@ uvicorn web.server:app --reload      # ou: python -m web.server
 # abra http://localhost:8000
 ```
 
-- `POST /api/investigacoes` — sobe o PDF e dispara a investigação (background)
+- `POST /api/investigacoes` — sobe o edital + certidões fiscais (PDF, opcionais)
+  e dispara a investigação (background). Certidões são casadas por CNPJ ao licitante;
+  vencedor fiscalmente irregular vira alerta `vencedor_irregular`
 - `GET /api/investigacoes` — histórico · `GET /api/cruzamento/recorrentes` — recorrentes
 - `GET /api/investigacoes/<id>/laudo.pdf` — laudo · organograma via `?data=/api/investigacoes/<id>/artefato`
 

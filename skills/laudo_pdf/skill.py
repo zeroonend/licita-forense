@@ -56,6 +56,7 @@ def gerar_pdf(artefato: dict, caminho_saida: str = None) -> str:
 
     _desenhar_rede(pdf, empresas, score.get("alertas", []))
     _tabela_licitantes(pdf, empresas)
+    _regularidade_fiscal(pdf, empresas)
     _lista_alertas(pdf, empresas, score.get("alertas", []))
     _rede_aprofundada(pdf, grafo)
     _texto_laudo(pdf, laudo.get("text", ""))
@@ -120,6 +121,39 @@ def _desenhar_rede(pdf, empresas, alertas):
         pdf.cell(36, 4, nome, align="C")
     pdf.set_draw_color(0, 0, 0)
     pdf.set_xy(pdf.l_margin, y0 + H)  # reseta x também (set_y sozinho não reseta)
+
+
+def _regularidade_fiscal(pdf, empresas):
+    """Tabela de regularidade fiscal — só aparece quando há certidões analisadas."""
+    com = [e for e in empresas if e.get("regularidade_fiscal")]
+    if not com:
+        return
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _s("Regularidade fiscal dos licitantes"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_fill_color(235, 235, 235)
+    larg = (70, 30, 50, 40)
+    for t, w in zip(("Empresa", "Situacao", "Esferas", "Pendencias"), larg):
+        pdf.cell(w, 6, _s(t), border=1, fill=True)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    for e in com:
+        rf = e.get("regularidade_fiscal") or {}
+        irregular = rf.get("regular") is False
+        pend = list(rf.get("irregulares") or []) + [x + " (vencida)" for x in (rf.get("vencidas") or [])]
+        linha = (
+            (e.get("razao_social") or "-")[:42],
+            "IRREGULAR" if irregular else ("Regular" if rf.get("regular") else "-"),
+            ", ".join((rf.get("esferas") or {}).keys())[:30] or "-",
+            ", ".join(pend)[:24] or "-",
+        )
+        if irregular:
+            pdf.set_text_color(*COR_VINCULO)
+        for v, w in zip(linha, larg):
+            pdf.cell(w, 6, _s(v), border=1)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln()
+    pdf.ln(2)
 
 
 def _tabela_licitantes(pdf, empresas):

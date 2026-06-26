@@ -20,6 +20,9 @@ from extrator.extrator import extrair_licitantes, MAX_CHARS, EXTRACTOR_PROMPT_VE
 from skills.consulta_cnpj.skill import consultar_cnpj
 from skills.busca_reversa_socios.skill import buscar_empresas_do_socio
 from skills.consulta_dominio.skill import consultar_dono_dominio
+from skills.analise_certidoes.skill import (
+    analisar_certidao_pdf, resumir_regularidade, CERTIDAO_PROMPT_VERSION,
+)
 from skills.scoring_conluio.skill import (
     calcular_score, _dominio_email, PROVEDORES_GENERICOS, _e_administrador,
 )
@@ -38,7 +41,8 @@ SCHEMA_VERSION = "investigation_result.v1"
 def investigar(caminho_pdf: str, aprofundar: bool = False,
                limite_aprofundamento: int = 30, persistir: bool = True,
                gravar_cache: bool = False, replay_store: dict = None,
-               usar_banco: bool = False, nome_original: str = None) -> dict:
+               usar_banco: bool = False, nome_original: str = None,
+               certidoes_pdfs: list = None) -> dict:
     """
     Pipeline completo de investigação.
     Retorna um artefato `investigation_result.v1` (schema versionado, com
@@ -107,6 +111,11 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
     print("\n[2.5] Enriquecendo domínios de e-mail (registro.br)...")
     _enriquecer_dominios(dados_empresas, conn)
 
+    if certidoes_pdfs:
+        print("\n[2.6] Analisando certidões de regularidade fiscal...")
+        warnings.extend(_enriquecer_certidoes(dados_empresas, certidoes_pdfs,
+                                              licitantes.get("meta")))
+
     print("\n[3/5] Investigando sócios (busca reversa)...")
     expansao_socios = investigar_socios(dados_empresas)
     grafo = construir_grafo(dados_empresas, expansao_socios)
@@ -151,6 +160,7 @@ def investigar(caminho_pdf: str, aprofundar: bool = False,
                 "prompt_versions": {
                     "extractor": EXTRACTOR_PROMPT_VERSION,
                     "laudo": LAUDO_PROMPT_VERSION,
+                    "certidao": CERTIDAO_PROMPT_VERSION,
                 },
                 "ruleset_version": score.get("ruleset_version"),
                 "llm_calls": chamadas_llm,
@@ -304,6 +314,42 @@ def _enriquecer_dominios(dados_empresas: list, conn=None) -> None:
             emp["dominio_dono"] = dono.get("id") or dono.get("nome")
             if dono.get("nome"):
                 emp["dominio_dono_nome"] = dono["nome"]
+
+
+def _enriquecer_certidoes(dados_empresas: list, certidoes_pdfs: list, meta: dict = None) -> list:
+    """
+    Analisa cada PDF de certidão, casa pelo CNPJ com um licitante e anexa
+    `certidoes` (lista) + `regularidade_fiscal` (resumo). Mutação in-place.
+    Retorna a lista de avisos (ex.: certidão sem licitante correspondente).
+    Dado temporal — não entra no cache de empresas.
+    """
+    por_cnpj = {}
+    for emp in dados_empresas:
+        digitos = "".join(c for c in (emp.get("cnpj") or "") if c.isdigit())
+        if digitos:
+            por_cnpj[digitos] = emp
+
+    avisos = []
+    data_ref = (meta or {}).get("data")
+    for caminho in certidoes_pdfs:
+        registro = analisar_certidao_pdf(caminho)
+        if not registro or not registro.get("cnpj"):
+            avisos.append(f"Certidão não interpretada ({os.path.basename(caminho)}).")
+            continue
+        emp = por_cnpj.get(registro["cnpj"])
+        if not emp:
+            avisos.append(f"Certidão de CNPJ {registro['cnpj']} sem licitante "
+                          f"correspondente no edital — ignorada.")
+            continue
+        emp.setdefault("certidoes", []).append(registro)
+        print(f"      → certidão {registro.get('esfera', '?')} de "
+              f"{emp.get('razao_social', registro['cnpj'])}: "
+              f"{'regular' if registro.get('regular') else 'irregular'}")
+
+    for emp in dados_empresas:
+        if emp.get("certidoes"):
+            emp["regularidade_fiscal"] = resumir_regularidade(emp["certidoes"], data_ref)
+    return avisos
 
 
 def construir_grafo(dados_empresas: list, expansao_socios: dict = None) -> dict:

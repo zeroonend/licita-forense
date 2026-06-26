@@ -83,7 +83,7 @@ def test_upload_rejeita_nao_pdf(cliente):
 
 def test_upload_dispara_job_e_indexa(cliente, monkeypatch):
     # pipeline falso: grava no banco e devolve o id, sem tocar em LLM/APIs.
-    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None):
+    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None, certidoes_pdfs=None):
         eid = "job-exec-1"
         conn = db.conectar()
         try:
@@ -108,6 +108,33 @@ def test_upload_dispara_job_e_indexa(cliente, monkeypatch):
     assert j["execucao_id"] == "job-exec-1"
     # apareceu no histórico
     assert any(e["id"] == "job-exec-1" for e in cliente.get("/api/investigacoes").json())
+
+
+def test_upload_com_certidoes_passa_caminhos(cliente, monkeypatch):
+    capturado = {}
+
+    def fake_pipeline(caminho_pdf, aprofundar, nome_original=None, certidoes_pdfs=None):
+        capturado["certidoes"] = list(certidoes_pdfs or [])
+        return "exec-cert"
+    monkeypatch.setattr(server, "executar_pipeline", fake_pipeline)
+
+    r = cliente.post(
+        "/api/investigacoes",
+        files=[
+            ("arquivo", ("edital.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")),
+            ("certidoes", ("cnd_federal.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")),
+            ("certidoes", ("fgts.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")),
+        ],
+    )
+    assert r.status_code == 200
+    assert r.json()["n_certidoes"] == 2
+    job_id = r.json()["job_id"]
+    for _ in range(40):
+        if cliente.get(f"/api/jobs/{job_id}").json()["status"] in ("concluido", "erro"):
+            break
+        time.sleep(0.1)
+    assert len(capturado["certidoes"]) == 2
+    assert all(p.endswith(".pdf") for p in capturado["certidoes"])
 
 
 def test_artefato_e_laudo_pdf(cliente, tmp_path):
